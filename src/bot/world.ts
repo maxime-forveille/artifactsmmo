@@ -5,6 +5,7 @@ import type { components } from "../client/schema.js";
 
 type MapContentType = components["schemas"]["MapContentType"];
 type Map = components["schemas"]["MapSchema"];
+type Resource = components["schemas"]["ResourceSchema"];
 
 export class LocationNotFoundError extends Error {
   constructor(
@@ -13,6 +14,13 @@ export class LocationNotFoundError extends Error {
   ) {
     super(`No map found for ${contentType} "${contentCode}"`);
     this.name = "LocationNotFoundError";
+  }
+}
+
+export class ResourceNotFoundError extends Error {
+  constructor(public readonly itemCode: string) {
+    super(`No gatherable resource drops "${itemCode}"`);
+    this.name = "ResourceNotFoundError";
   }
 }
 
@@ -34,4 +42,22 @@ export const resolveLocation = (
     const [map] = page.data;
 
     return map ? ok(map) : err(new LocationNotFoundError(contentType, contentCode));
+  });
+
+/**
+ * Finds which gatherable resource node drops `itemCode` (e.g. "copper_ore"
+ * is dropped by the "copper_rocks" resource). Item codes and resource-node
+ * codes are distinct, so this is the step needed before `resolveLocation`
+ * can find a map for a raw material.
+ *
+ * Picks the first match returned by the API.
+ */
+export const findResourceForDrop = (
+  client: Pick<ArtifactsClient, "getResources">,
+  itemCode: string,
+): ResultAsync<Resource, ArtifactsApiError | ResourceNotFoundError> =>
+  client.getResources({ drop: itemCode }).andThen((page) => {
+    const [resource] = page.data;
+
+    return resource ? ok(resource) : err(new ResourceNotFoundError(itemCode));
   });

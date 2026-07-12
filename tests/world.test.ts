@@ -4,10 +4,17 @@ import { describe, expect, it, vi } from "vitest";
 import { ArtifactsApiError } from "../src/client/index.js";
 import type { ArtifactsClient } from "../src/client/index.js";
 import type { components } from "../src/client/schema.js";
-import { LocationNotFoundError, resolveLocation } from "../src/bot/world.js";
+import {
+  findResourceForDrop,
+  LocationNotFoundError,
+  resolveLocation,
+  ResourceNotFoundError,
+} from "../src/bot/world.js";
 
 type MapPage = components["schemas"]["StaticDataPage_MapSchema_"];
 type Map = components["schemas"]["MapSchema"];
+type Resource = components["schemas"]["ResourceSchema"];
+type ResourcePage = components["schemas"]["StaticDataPage_ResourceSchema_"];
 
 const buildMap = (overrides: Partial<Map> = {}): Map => ({
   ...({} as Map),
@@ -15,6 +22,19 @@ const buildMap = (overrides: Partial<Map> = {}): Map => ({
 });
 
 const buildPage = (data: Map[]): MapPage => ({
+  data,
+  page: 1,
+  pages: 1,
+  size: 50,
+  total: data.length,
+});
+
+const buildResource = (overrides: Partial<Resource> = {}): Resource => ({
+  ...({} as Resource),
+  ...overrides,
+});
+
+const buildResourcePage = (data: Resource[]): ResourcePage => ({
   data,
   page: 1,
   pages: 1,
@@ -66,6 +86,49 @@ describe("resolveLocation", () => {
       { getMaps } as Pick<ArtifactsClient, "getMaps">,
       "workshop",
       "weaponcrafting",
+    );
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toBe(apiError);
+  });
+});
+
+describe("findResourceForDrop", () => {
+  it("returns the first resource that drops the item", async () => {
+    const resource = buildResource({ code: "copper_rocks" });
+    const getResources = vi.fn(() => okAsync(buildResourcePage([resource])));
+
+    const result = await findResourceForDrop(
+      { getResources } as Pick<ArtifactsClient, "getResources">,
+      "copper_ore",
+    );
+
+    expect(getResources).toHaveBeenCalledWith({ drop: "copper_ore" });
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toBe(resource);
+  });
+
+  it("returns a ResourceNotFoundError when no resource drops the item", async () => {
+    const getResources = vi.fn(() => okAsync(buildResourcePage([])));
+
+    const result = await findResourceForDrop(
+      { getResources } as Pick<ArtifactsClient, "getResources">,
+      "feather",
+    );
+
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error).toBeInstanceOf(ResourceNotFoundError);
+    expect((error as ResourceNotFoundError).itemCode).toBe("feather");
+  });
+
+  it("propagates a getResources failure without swallowing it", async () => {
+    const apiError = new ArtifactsApiError("boom", 500, undefined);
+    const getResources = vi.fn(() => errAsync(apiError));
+
+    const result = await findResourceForDrop(
+      { getResources } as Pick<ArtifactsClient, "getResources">,
+      "copper_ore",
     );
 
     expect(result.isErr()).toBe(true);
