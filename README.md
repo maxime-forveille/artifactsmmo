@@ -55,18 +55,23 @@ pnpm dev
 ```
 .
 ├── src/
-│   ├── bot/              # Main bot logic
-│   │   ├── characters/   # Per-character strategies
-│   │   │   ├── stan.ts
-│   │   │   ├── kyle.ts
-│   │   │   ├── cartman.ts
-│   │   │   ├── kenny.ts
-│   │   │   └── butters.ts
-│   │   ├── strategies/   # Farming, trading, crafting logic
-│   │   └── tasks/        # One-off operations
-│   ├── client/           # Artifacts MMO API wrapper
-│   ├── utils/            # Helpers, logging, types
-│   └── index.ts          # Entry point
+│   ├── bot/                # Main bot logic
+│   │   ├── characters/     # characterAgent.ts: cooldown/position-aware agent
+│   │   │                   # factory, shared by all 5 characters (not one
+│   │   │                   # file per character)
+│   │   ├── strategies/     # farming.ts, equipment.ts: farming and
+│   │   │                   # craft+equip pipelines
+│   │   ├── tasks/          # runTask.ts: Task type (farm / craftAndEquip)
+│   │   │                   # + dispatcher describing what a character
+│   │   │                   # should be doing, run or continuous
+│   │   └── world.ts         # Resolves resource/monster/workshop codes to
+│   │                        # map positions
+│   ├── client/              # Typed, Result-based Artifacts MMO API wrapper
+│   │                         # (schema.d.ts is generated from the OpenAPI spec,
+│   │                         # see 'pnpm generate:api-types')
+│   ├── utils/                # Config, logging, cooldown helpers
+│   └── index.ts               # Entry point: character -> Task assignments
+├── scripts/                    # One-off dev scripts (e.g. OpenAPI codegen)
 ├── tests/
 ├── .env.example
 └── package.json
