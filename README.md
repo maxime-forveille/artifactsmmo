@@ -3,9 +3,10 @@
 Personal TypeScript bot for managing my 5-character crew in Artifacts MMO.
 
 **Characters:**
+
 - **Cartman** — Main character, primary farmer & general automation
 - **Stan** — Crafter, resource management & item optimization
-- **Kyle** — Combat specialist, raid participant  
+- **Kyle** — Combat specialist, raid participant
 - **Kenny** — Scout, exploration & task runner
 - **Butters** — Support, banking & item distribution
 
@@ -26,23 +27,25 @@ Personal TypeScript bot for managing my 5-character crew in Artifacts MMO.
 
 ## Tech Stack
 
-- **Runtime:** Node.js 18+
+- **Runtime:** Node.js 24.17.0
 - **Language:** TypeScript
 - **API:** Artifacts MMO v8.0.1
-- **Package Manager:** npm
+- **Package Manager:** pnpm 11.9.0 (enforced via `packageManager`/`devEngines` in `package.json`)
+- **Testing:** Vitest
+- **Linting/Formatting:** oxlint + oxfmt
 
 ## Quick Start
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Set up environment
 cp .env.example .env
 # Edit .env with your Artifacts token
 
 # Run the bot
-npm run dev
+pnpm dev
 ```
 
 ## Project Structure
@@ -87,6 +90,7 @@ ENABLE_NOTIFICATIONS=true
 ### Active Features
 
 #### Cartman — Farming
+
 ```typescript
 // Automated resource gathering loop
 - Gathers on available resources
@@ -95,6 +99,7 @@ ENABLE_NOTIFICATIONS=true
 ```
 
 #### Stan — Crafting Pipeline
+
 ```typescript
 // Resource-to-item automation
 - Pulls materials from bank (Butters)
@@ -104,9 +109,10 @@ ENABLE_NOTIFICATIONS=true
 ```
 
 #### Characters State Tracking
+
 ```typescript
 // Check character status anytime
-npm run status
+pnpm status
 
 // Output:
 // Cartman:  Level 42, HP: 150/150, Location: forest (farming)
@@ -117,32 +123,33 @@ npm run status
 ```
 
 #### Bank Operations
+
 ```typescript
 // Deposit resources to Butters (central bank)
-npm run bank:deposit
+pnpm bank:deposit
 
 // Withdraw crafting materials for Stan
-npm run bank:withdraw stan materials
+pnpm bank:withdraw stan materials
 ```
 
 ## Scripts
 
 ```bash
 # Development
-npm run dev          # Run bot with hot reload
-npm run build        # Compile TypeScript
-npm run type-check   # Type checking only
+pnpm dev          # Run bot with hot reload
+pnpm build        # Compile TypeScript
+pnpm type-check   # Type checking only
 
 # Utilities
-npm run status       # Get all characters status
-npm run inventory    # List all inventories
-npm run logs         # View bot logs
+pnpm status       # Get all characters status
+pnpm inventory    # List all inventories
+pnpm logs         # View bot logs
 
 # Operations
-npm run farm:cartman   # Start Cartman's farming loop
-npm run craft:stan     # Start Stan's crafting pipeline
-npm run bank:sync      # Sync bank across all characters
-npm run fight:kyle     # Start Kyle's combat
+pnpm farm:cartman   # Start Cartman's farming loop
+pnpm craft:stan     # Start Stan's crafting pipeline
+pnpm bank:sync      # Sync bank across all characters
+pnpm fight:kyle     # Start Kyle's combat
 ```
 
 ## Known Issues & Limitations
@@ -177,13 +184,15 @@ npm run fight:kyle     # Start Kyle's combat
 ## Debugging
 
 ### Enable Verbose Logging
+
 ```bash
-LOG_LEVEL=debug npm run dev
+LOG_LEVEL=debug pnpm dev
 ```
 
 ### Check Character State
+
 ```bash
-npm run status
+pnpm status
 
 # or programmatically:
 import { bot } from './src';
@@ -192,6 +201,7 @@ console.log(char);
 ```
 
 ### View Recent Logs
+
 ```bash
 tail -f logs/bot.log
 ```
@@ -199,9 +209,9 @@ tail -f logs/bot.log
 ## Testing
 
 ```bash
-npm test              # Run all tests
-npm run test:watch   # Watch mode
-npm run test:coverage # Coverage report
+pnpm test              # Run all tests
+pnpm test:watch        # Watch mode
+pnpm test:coverage     # Coverage report
 ```
 
 ## Resources
@@ -220,6 +230,7 @@ npm run test:coverage # Coverage report
 ## Changelog
 
 ### v0.0.1 (Current)
+
 - ✅ Basic character state tracking
 - ✅ API client wrapper
 - ✅ Stan's farming loop (WIP)
