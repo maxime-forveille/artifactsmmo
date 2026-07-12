@@ -8,6 +8,7 @@ import type { components } from "../src/client/schema.js";
 
 type MovementData = components["schemas"]["CharacterMovementDataSchema"];
 type MovementResponse = components["schemas"]["CharacterMovementResponseSchema"];
+type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type CharacterResponse = components["schemas"]["CharacterResponseSchema"];
 type Cooldown = components["schemas"]["CooldownSchema"];
 
@@ -32,22 +33,25 @@ const buildCooldown = (expiration: string): Cooldown => ({
   total_seconds: 0,
 });
 
-// `character`, `destination` and most `CharacterSchema` fields are irrelevant
-// to the agent's cooldown logic, so they're stubbed out rather than filled
-// with a full fixture.
-const buildMovementResponse = (expiration: string): MovementResponse => ({
+// Most `CharacterSchema` fields are irrelevant to the agent's cooldown/
+// position logic, so they're stubbed out rather than filled with a full
+// fixture; only `map_id` and `cooldown_expiration` are ever asserted on.
+const buildCharacter = (overrides: Partial<CharacterSnapshot> = {}): CharacterSnapshot => ({
+  ...({} as CharacterSnapshot),
+  map_id: 1,
+  ...overrides,
+});
+
+const buildCharacterResponse = (overrides: Partial<CharacterSnapshot> = {}): CharacterResponse => ({
+  data: buildCharacter(overrides),
+});
+
+const buildMovementResponse = (expiration: string, mapId: number): MovementResponse => ({
   data: {
-    character: {} as MovementData["character"],
+    character: buildCharacter({ map_id: mapId }),
     cooldown: buildCooldown(expiration),
     destination: {} as MovementData["destination"],
     path: [],
-  },
-});
-
-const buildCharacterResponse = (cooldownExpiration?: string): CharacterResponse => ({
-  data: {
-    ...({} as CharacterResponse["data"]),
-    ...(cooldownExpiration === undefined ? {} : { cooldown_expiration: cooldownExpiration }),
   },
 });
 
@@ -90,7 +94,9 @@ describe("createCharacterAgent", () => {
   });
 
   it("performs the first move immediately when the character has no prior cooldown", async () => {
-    const moveCharacter = vi.fn(() => okAsync(buildMovementResponse("2024-01-01T00:00:05.000Z")));
+    const moveCharacter = vi.fn(() =>
+      okAsync(buildMovementResponse("2024-01-01T00:00:05.000Z", 2)),
+    );
     const dependencies: Dependencies = { ...defaultDependencies, moveCharacter };
 
     const agent = (await createCharacterAgent(dependencies, "Cartman"))._unsafeUnwrap();
@@ -102,10 +108,13 @@ describe("createCharacterAgent", () => {
   });
 
   it("waits out a cooldown seeded from the character's state before the first action", async () => {
-    const moveCharacter = vi.fn(() => okAsync(buildMovementResponse("2024-01-01T00:00:10.000Z")));
+    const moveCharacter = vi.fn(() =>
+      okAsync(buildMovementResponse("2024-01-01T00:00:10.000Z", 2)),
+    );
     const dependencies: Dependencies = {
       ...defaultDependencies,
-      getCharacter: () => okAsync(buildCharacterResponse("2024-01-01T00:00:05.000Z")),
+      getCharacter: () =>
+        okAsync(buildCharacterResponse({ cooldown_expiration: "2024-01-01T00:00:05.000Z" })),
       moveCharacter,
     };
 
@@ -124,8 +133,8 @@ describe("createCharacterAgent", () => {
   it("waits out the previous cooldown before issuing the next move", async () => {
     const moveCharacter = vi
       .fn()
-      .mockReturnValueOnce(okAsync(buildMovementResponse("2024-01-01T00:00:05.000Z")))
-      .mockReturnValueOnce(okAsync(buildMovementResponse("2024-01-01T00:00:10.000Z")));
+      .mockReturnValueOnce(okAsync(buildMovementResponse("2024-01-01T00:00:05.000Z", 2)))
+      .mockReturnValueOnce(okAsync(buildMovementResponse("2024-01-01T00:00:10.000Z", 3)));
     const dependencies: Dependencies = { ...defaultDependencies, moveCharacter };
 
     const agent = (await createCharacterAgent(dependencies, "Cartman"))._unsafeUnwrap();
@@ -156,5 +165,58 @@ describe("createCharacterAgent", () => {
 
     expect(result.isErr()).toBe(true);
     expect(result._unsafeUnwrapErr()).toBe(apiError);
+  });
+
+  it("getCharacter reflects the latest known snapshot, updated after each action", async () => {
+    const moveCharacter = vi.fn(() =>
+      okAsync(buildMovementResponse("2024-01-01T00:00:05.000Z", 42)),
+    );
+    const dependencies: Dependencies = {
+      ...defaultDependencies,
+      getCharacter: () => okAsync(buildCharacterResponse({ map_id: 1 })),
+      moveCharacter,
+    };
+
+    const agent = (await createCharacterAgent(dependencies, "Cartman"))._unsafeUnwrap();
+    expect(agent.getCharacter().map_id).toBe(1);
+
+    await agent.move({ x: 1, y: 1 });
+
+    expect(agent.getCharacter().map_id).toBe(42);
+  });
+
+  it("moveTo skips the move call when the character is already at the target map", async () => {
+    const moveCharacter = vi.fn(() =>
+      okAsync(buildMovementResponse("2024-01-01T00:00:05.000Z", 5)),
+    );
+    const dependencies: Dependencies = {
+      ...defaultDependencies,
+      getCharacter: () => okAsync(buildCharacterResponse({ map_id: 5 })),
+      moveCharacter,
+    };
+
+    const agent = (await createCharacterAgent(dependencies, "Cartman"))._unsafeUnwrap();
+    const result = await agent.moveTo(5);
+
+    expect(moveCharacter).not.toHaveBeenCalled();
+    expect(result.isOk()).toBe(true);
+  });
+
+  it("moveTo moves the character when not at the target map", async () => {
+    const moveCharacter = vi.fn(() =>
+      okAsync(buildMovementResponse("2024-01-01T00:00:05.000Z", 5)),
+    );
+    const dependencies: Dependencies = {
+      ...defaultDependencies,
+      getCharacter: () => okAsync(buildCharacterResponse({ map_id: 1 })),
+      moveCharacter,
+    };
+
+    const agent = (await createCharacterAgent(dependencies, "Cartman"))._unsafeUnwrap();
+    const result = await agent.moveTo(5);
+
+    expect(moveCharacter).toHaveBeenCalledWith("Cartman", { map_id: 5 });
+    expect(result.isOk()).toBe(true);
+    expect(agent.getCharacter().map_id).toBe(5);
   });
 });

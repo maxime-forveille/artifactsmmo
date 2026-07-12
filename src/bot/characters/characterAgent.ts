@@ -1,9 +1,10 @@
-import { ResultAsync } from "neverthrow";
+import { okAsync, ResultAsync } from "neverthrow";
 
 import type { ArtifactsApiError, ArtifactsClient } from "../../client/index.js";
 import type { components } from "../../client/schema.js";
 import { type Cooldown, waitUntil } from "../../utils/cooldown.js";
 
+type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type Destination = components["schemas"]["DestinationSchema"];
 type SimpleItem = components["schemas"]["SimpleItemSchema"];
 
@@ -23,11 +24,17 @@ type CharacterAgentDependencies = Pick<
 const buildCharacterAgent = (
   client: CharacterAgentDependencies,
   name: string,
-  initialCooldownExpiration: string | undefined,
+  initial: CharacterSnapshot,
 ) => {
-  let nextActionAt = initialCooldownExpiration;
+  let nextActionAt = initial.cooldown_expiration;
+  let character = initial;
 
-  const withCooldown = <T extends { cooldown: Cooldown }>(
+  // Every action response carries the character's cooldown, and every one
+  // except `fight` (which involves up to 3 characters, see `characters`
+  // instead) carries a fresh, singular `character` snapshot. Both are
+  // recorded here so the rest of the agent never has to guess whether a
+  // cooldown is still running or where the character currently is.
+  const withCooldown = <T extends { cooldown: Cooldown; character?: CharacterSnapshot }>(
     action: () => ResultAsync<T, ArtifactsApiError>,
   ): ResultAsync<T, ArtifactsApiError> => {
     const wait = nextActionAt === undefined ? Promise.resolve() : waitUntil(nextActionAt);
@@ -36,12 +43,23 @@ const buildCharacterAgent = (
       .andThen(action)
       .map((result) => {
         nextActionAt = result.cooldown.expiration;
+
+        if (result.character !== undefined) {
+          character = result.character;
+        }
+
         return result;
       });
   };
 
+  const getCharacter = (): CharacterSnapshot => character;
+
   const move = (destination: Destination) =>
     withCooldown(() => client.moveCharacter(name, destination).map((response) => response.data));
+
+  /** Moves to `mapId` unless the character is already there. */
+  const moveTo = (mapId: number): ResultAsync<void, ArtifactsApiError> =>
+    character.map_id === mapId ? okAsync(undefined) : move({ map_id: mapId }).map(() => undefined);
 
   const rest = () => withCooldown(() => client.rest(name).map((response) => response.data));
 
@@ -67,7 +85,9 @@ const buildCharacterAgent = (
     depositItems,
     fight,
     gather,
+    getCharacter,
     move,
+    moveTo,
     name,
     rest,
     withdrawGold,
@@ -80,15 +100,13 @@ export type CharacterAgent = ReturnType<typeof buildCharacterAgent>;
 /**
  * Creates a stateful, cooldown-aware wrapper around `ArtifactsClient` for a
  * single character: every action first waits out the cooldown left by the
- * previous one, then records the cooldown returned by the API for the next
- * call. The initial cooldown is seeded from the character's current state
- * (`GET /characters/{name}`), so a freshly created agent doesn't have to
- * guess whether the character is still on cooldown from a previous run.
+ * previous one, then records the cooldown and character state returned by
+ * the API for the next call. Both are seeded from the character's current
+ * state (`GET /characters/{name}`), so a freshly created agent doesn't have
+ * to guess whether it's still on cooldown or where it currently is.
  */
 export const createCharacterAgent = (
   client: CharacterAgentDependencies,
   name: string,
 ): ResultAsync<CharacterAgent, ArtifactsApiError> =>
-  client
-    .getCharacter(name)
-    .map((character) => buildCharacterAgent(client, name, character.data.cooldown_expiration));
+  client.getCharacter(name).map((character) => buildCharacterAgent(client, name, character.data));
