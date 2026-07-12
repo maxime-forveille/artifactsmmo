@@ -165,6 +165,33 @@ describe("craftAndEquip", () => {
     expect(equip).toHaveBeenCalledWith([{ code: "copper_pickaxe", quantity: 1, slot: "weapon" }]);
   });
 
+  it("skips crafting and equipping when the target slot is already filled", async () => {
+    const getItem = vi.fn(() =>
+      okAsync({ data: buildItem({ code: "copper_ring", type: "ring" }) }),
+    );
+    const equip = vi.fn();
+    const craft = vi.fn();
+    const gather = vi.fn();
+
+    const result = await craftAndEquip(
+      { getItem, getMaps: vi.fn(), getResources: vi.fn() },
+      {
+        craft,
+        depositItems: vi.fn(),
+        equip,
+        gather,
+        getCharacter: () => ({ ring1_slot: "copper_ring" }) as CharacterSnapshot,
+        moveTo: vi.fn(),
+      },
+      "copper_ring",
+    );
+
+    expect(result.isOk()).toBe(true);
+    expect(craft).not.toHaveBeenCalled();
+    expect(gather).not.toHaveBeenCalled();
+    expect(equip).not.toHaveBeenCalled();
+  });
+
   it("deposits everything except the target item at the bank when the inventory fills up mid-gather, then resumes", async () => {
     const state = createFakeCharacterState(4);
     state.add("junk_item", 3);

@@ -2,12 +2,25 @@ import { type Task, runTask } from "./bot/tasks/runTask.js";
 import { bot } from "./client/index.js";
 import { logger } from "./utils/logger.js";
 
+// Every level-1 equipment slot feasible without combat. Weapon-type items
+// (copper_pickaxe/copper_axe/copper_dagger/fishing_net) all fill the same
+// "weapon" slot, so only one is listed here - characters that already have
+// a different weapon equipped simply skip it (see craftAndEquip's
+// already-equipped check).
+const FULL_LOADOUT: readonly string[] = [
+  "copper_dagger",
+  "wooden_shield",
+  "copper_helmet",
+  "copper_boots",
+  "copper_ring",
+];
+
 const ASSIGNMENTS: readonly { readonly character: string; readonly task: Task }[] = [
-  { character: "Cartman", task: { item: "copper_pickaxe", type: "craftAndEquip" } },
-  { character: "Kyle", task: { item: "copper_dagger", type: "craftAndEquip" } },
-  { character: "Kenny", task: { item: "copper_helmet", type: "craftAndEquip" } },
-  { character: "Stan", task: { item: "copper_axe", type: "craftAndEquip" } },
-  { character: "Butters", task: { item: "wooden_shield", type: "craftAndEquip" } },
+  { character: "Cartman", task: { items: FULL_LOADOUT, type: "craftAndEquip" } },
+  { character: "Kyle", task: { items: FULL_LOADOUT, type: "craftAndEquip" } },
+  { character: "Kenny", task: { items: FULL_LOADOUT, type: "craftAndEquip" } },
+  { character: "Stan", task: { items: FULL_LOADOUT, type: "craftAndEquip" } },
+  { character: "Butters", task: { items: FULL_LOADOUT, type: "craftAndEquip" } },
 ];
 
 async function main() {

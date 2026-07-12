@@ -10,12 +10,13 @@ const RETRY_DELAY_MS = 10_000;
 
 /**
  * What a character should be doing. `farm` runs forever; `craftAndEquip`
- * runs once. New task types should be added here first, then handled in
- * `runTask`'s switch (the `never` check below makes an unhandled case a
- * compile error rather than a silent no-op).
+ * works through `items` in order, then stops. New task types should be
+ * added here first, then handled in `runTask`'s switch (the `never` check
+ * below makes an unhandled case a compile error rather than a silent
+ * no-op).
  */
 export type Task =
-  | { readonly type: "craftAndEquip"; readonly item: string }
+  | { readonly type: "craftAndEquip"; readonly items: readonly string[] }
   | { readonly type: "farm"; readonly resource: string };
 
 const runFarmTask = async (
@@ -42,25 +43,33 @@ const runFarmTask = async (
   }
 };
 
+/**
+ * Crafts and equips each item in `items`, one after another. A failure on
+ * one item is logged but doesn't stop the rest of the list (e.g. so a
+ * ring recipe hiccup doesn't prevent the character from still getting
+ * their boots).
+ */
 const runCraftAndEquipTask = async (
   client: ArtifactsClient,
   characterName: string,
   agent: CharacterAgent,
-  itemCode: string,
+  items: readonly string[],
 ): Promise<void> => {
-  const result = await craftAndEquip(client, agent, itemCode);
+  for (const itemCode of items) {
+    const result = await craftAndEquip(client, agent, itemCode);
 
-  await result.match(
-    async () => {
-      logger.info(
-        { character: characterName, item: itemCode },
-        `${characterName}: crafted and equipped ${itemCode}`,
-      );
-    },
-    async (error) => {
-      logger.error(error, `${characterName}: failed to craft/equip ${itemCode}`);
-    },
-  );
+    await result.match(
+      async () => {
+        logger.info(
+          { character: characterName, item: itemCode },
+          `${characterName}: crafted and equipped ${itemCode}`,
+        );
+      },
+      async (error) => {
+        logger.error(error, `${characterName}: failed to craft/equip ${itemCode}, moving on`);
+      },
+    );
+  }
 };
 
 /**
@@ -80,7 +89,7 @@ export const runTask = async (
     async (agent) => {
       switch (task.type) {
         case "craftAndEquip": {
-          await runCraftAndEquipTask(client, characterName, agent, task.item);
+          await runCraftAndEquipTask(client, characterName, agent, task.items);
           return;
         }
         case "farm": {

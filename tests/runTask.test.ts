@@ -61,7 +61,7 @@ describe("runTask", () => {
     const client = buildFakeClient({ getCharacter: () => errAsync(apiError) });
 
     await expect(
-      runTask(client, "Ghost", { item: "copper_ring", type: "craftAndEquip" }),
+      runTask(client, "Ghost", { items: ["copper_ring"], type: "craftAndEquip" }),
     ).resolves.toBeUndefined();
   });
 
@@ -83,7 +83,37 @@ describe("runTask", () => {
       getItem,
     });
 
-    await runTask(client, "Cartman", { item: "copper_ring", type: "craftAndEquip" });
+    await runTask(client, "Cartman", { items: ["copper_ring"], type: "craftAndEquip" });
+
+    expect(equip).toHaveBeenCalledWith("Cartman", [
+      { code: "copper_ring", quantity: 1, slot: "ring1" },
+    ]);
+  });
+
+  it("keeps going to the next item in the list when one fails", async () => {
+    const character = buildCharacter({
+      inventory: [{ code: "copper_ring", quantity: 1, slot: 1 }],
+    });
+    const getItem = vi.fn((code: string) =>
+      code === "broken_item"
+        ? okAsync({ data: buildItem({ code: "broken_item", type: "artifact" }) })
+        : okAsync({ data: buildItem({ code: "copper_ring", type: "ring" }) }),
+    );
+    const equip = vi.fn(() =>
+      okAsync({
+        data: { character, cooldown: buildCooldown("2024-01-01T00:00:03.000Z"), items: [] },
+      }),
+    );
+    const client = buildFakeClient({
+      equip,
+      getCharacter: () => okAsync({ data: character }),
+      getItem,
+    });
+
+    await runTask(client, "Cartman", {
+      items: ["broken_item", "copper_ring"],
+      type: "craftAndEquip",
+    });
 
     expect(equip).toHaveBeenCalledWith("Cartman", [
       { code: "copper_ring", quantity: 1, slot: "ring1" },

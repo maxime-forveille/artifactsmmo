@@ -13,6 +13,7 @@ import {
   type ResourceNotFoundError,
 } from "../world.js";
 
+type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type EquipSlot = components["schemas"]["ItemSlot"];
 type Item = components["schemas"]["ItemSchema"];
 
@@ -59,6 +60,27 @@ const EQUIP_SLOT_BY_ITEM_TYPE: Partial<Record<string, EquipSlot>> = {
   rune: "rune",
   shield: "shield",
   weapon: "weapon",
+};
+
+// Only the slots `EQUIP_SLOT_BY_ITEM_TYPE` can produce; the rest of the
+// `EquipSlot` enum (ring2, artifact1-3, utility1-2) is unused here.
+const SLOT_FIELD: Partial<Record<EquipSlot, keyof CharacterSnapshot>> = {
+  amulet: "amulet_slot",
+  bag: "bag_slot",
+  body_armor: "body_armor_slot",
+  boots: "boots_slot",
+  helmet: "helmet_slot",
+  leg_armor: "leg_armor_slot",
+  ring1: "ring1_slot",
+  rune: "rune_slot",
+  shield: "shield_slot",
+  weapon: "weapon_slot",
+};
+
+/** Whether `slot` already holds any item (not necessarily `itemCode`). */
+const isSlotFilled = (character: CharacterSnapshot, slot: EquipSlot): boolean => {
+  const field = SLOT_FIELD[slot];
+  return field !== undefined && Boolean(character[field]);
 };
 
 /**
@@ -206,6 +228,14 @@ export const craftAndEquip = (
 
     if (slot === undefined) {
       return errAsync(new UnsupportedEquipSlotError(itemCode, item.type));
+    }
+
+    if (isSlotFilled(agent.getCharacter(), slot)) {
+      logger.info(
+        { character: agent.getCharacter().name, item: itemCode, slot },
+        `${agent.getCharacter().name}: ${slot} already equipped, skipping ${itemCode}`,
+      );
+      return okAsync(undefined);
     }
 
     return ensureHeldItem(client, agent, item, 1).andThen(() => {
