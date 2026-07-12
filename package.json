@@ -12,7 +12,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
-    "generate:api-types": "pnpm dlx openapi-typescript@7 https://api.artifactsmmo.com/openapi.json -o src/client/schema.d.ts",
+    "generate:api-types": "tsx scripts/generateApiTypes.ts",
     "start": "node --env-file=.env dist/index.js",
     "build": "tsc -p tsconfig.build.json",
     "type-check": "tsc --noEmit",

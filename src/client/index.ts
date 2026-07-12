@@ -3,9 +3,8 @@ import { err, ok, ResultAsync } from "neverthrow";
 
 import { env } from "../utils/config.js";
 import { logger } from "../utils/logger.js";
+import { API_BASE_URL } from "./constants.js";
 import type { paths } from "./schema.js";
-
-const API_BASE_URL = "https://api.artifactsmmo.com";
 
 export class ArtifactsApiError extends Error {
   constructor(
