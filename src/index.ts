@@ -3,9 +3,9 @@ import { bot } from "./client/index.js";
 import { logger } from "./utils/logger.js";
 
 const ASSIGNMENTS: readonly { readonly character: string; readonly task: Task }[] = [
-  { character: "Cartman", task: { resource: "copper_rocks", type: "farm" } },
-  { character: "Kyle", task: { resource: "gudgeon_spot", type: "farm" } },
-  { character: "Kenny", task: { resource: "sunflower_field", type: "farm" } },
+  { character: "Cartman", task: { item: "copper_pickaxe", type: "craftAndEquip" } },
+  { character: "Kyle", task: { item: "copper_dagger", type: "craftAndEquip" } },
+  { character: "Kenny", task: { item: "copper_helmet", type: "craftAndEquip" } },
   { character: "Stan", task: { item: "copper_axe", type: "craftAndEquip" } },
   { character: "Butters", task: { item: "wooden_shield", type: "craftAndEquip" } },
 ];
