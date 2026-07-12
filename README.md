@@ -3,9 +3,9 @@
 Personal TypeScript bot for managing my 5-character crew in Artifacts MMO.
 
 **Characters:**
-- **Stan** — Main character, primary farmer
+- **Cartman** — Main character, primary farmer & general automation
+- **Stan** — Crafter, resource management & item optimization
 - **Kyle** — Combat specialist, raid participant  
-- **Cartman** — Crafter, resource manager
 - **Kenny** — Scout, exploration & task runner
 - **Butters** — Support, banking & item distribution
 
@@ -15,8 +15,8 @@ Personal TypeScript bot for managing my 5-character crew in Artifacts MMO.
 
 ### Planned Features
 
-- [ ] Automated farming loop for Stan & Kyle
-- [ ] Crafting pipeline (Cartman resource management)
+- [ ] Automated farming loop for Cartman & Kyle
+- [ ] Crafting pipeline (Stan resource management)
 - [ ] Grand Exchange trading bot
 - [ ] Bank synchronization across all characters
 - [ ] Task automation & reward collection
@@ -86,12 +86,21 @@ ENABLE_NOTIFICATIONS=true
 
 ### Active Features
 
-#### Stan — Farming
+#### Cartman — Farming
 ```typescript
 // Automated resource gathering loop
 - Gathers on available resources
 - Returns to bank when inventory full
 - Logs all activities
+```
+
+#### Stan — Crafting Pipeline
+```typescript
+// Resource-to-item automation
+- Pulls materials from bank (Butters)
+- Crafts at available workshops
+- Optimizes crafting order based on XP/profit
+- Deposits finished items back to bank
 ```
 
 #### Characters State Tracking
@@ -100,11 +109,11 @@ ENABLE_NOTIFICATIONS=true
 npm run status
 
 // Output:
-// Stan:     Level 42, HP: 150/150, Location: forest
-// Kyle:     Level 38, HP: 120/150, Location: dungeon
-// Cartman:  Level 35, HP: 100/100, Location: workshop
-// Kenny:    Level 40, HP: 140/150, Location: bank
-// Butters:  Level 36, HP: 110/120, Location: market
+// Cartman:  Level 42, HP: 150/150, Location: forest (farming)
+// Stan:     Level 38, HP: 120/150, Location: workshop (crafting)
+// Kyle:     Level 40, HP: 140/150, Location: dungeon (combat)
+// Kenny:    Level 36, HP: 110/120, Location: bank (tasks)
+// Butters:  Level 35, HP: 100/100, Location: bank (central hub)
 ```
 
 #### Bank Operations
@@ -112,8 +121,8 @@ npm run status
 // Deposit resources to Butters (central bank)
 npm run bank:deposit
 
-// Withdraw crafting materials
-npm run bank:withdraw cartman materials
+// Withdraw crafting materials for Stan
+npm run bank:withdraw stan materials
 ```
 
 ## Scripts
@@ -130,9 +139,10 @@ npm run inventory    # List all inventories
 npm run logs         # View bot logs
 
 # Operations
-npm run farm:stan    # Start Stan's farming loop
-npm run bank:sync    # Sync bank across all characters
-npm run fight:kyle   # Start Kyle's combat
+npm run farm:cartman   # Start Cartman's farming loop
+npm run craft:stan     # Start Stan's crafting pipeline
+npm run bank:sync      # Sync bank across all characters
+npm run fight:kyle     # Start Kyle's combat
 ```
 
 ## Known Issues & Limitations
