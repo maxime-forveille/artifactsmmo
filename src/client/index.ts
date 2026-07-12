@@ -89,6 +89,26 @@ const isActionRequest = (request: Request): boolean =>
 const isDataRequest = (request: Request): boolean => request.method === "GET";
 
 /**
+ * Shaves a safety margin off the server-documented limits before we enforce
+ * them locally. We record a request as "sent" the moment it leaves this
+ * process, not when the server actually counts it, so network latency and
+ * clock skew can land us exactly on the server's own boundary even while
+ * staying under ours. The limits are also per-IP (not just per-token), so
+ * any other traffic sharing this connection (e.g. the game's website open
+ * in a browser tab) eats into the same budget. Leaving 40% headroom
+ * (empirically verified live against a burst of 17 requests, see
+ * `createRateLimiter`'s doc comment) avoids tripping the server-side 429 in
+ * both cases.
+ */
+const SAFETY_MARGIN = 0.6;
+
+const withSafetyMargin = (windows: readonly RateLimitWindow[]): RateLimitWindow[] =>
+  windows.map((window) => ({
+    ...window,
+    limit: Math.max(1, Math.floor(window.limit * SAFETY_MARGIN)),
+  }));
+
+/**
  * Thin, fully-typed wrapper around the Artifacts MMO REST API.
  *
  * Every method returns a `ResultAsync<T, ArtifactsApiError>` rather than
@@ -100,18 +120,24 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
   const client = createClient<paths>({ baseUrl: API_BASE_URL });
   client.use(authMiddleware(token));
   client.use(
-    rateLimitMiddleware(isActionRequest, [
-      { limit: 10, windowMs: 1_000 },
-      { limit: 100, windowMs: 60_000 },
-      { limit: 5_000, windowMs: 3_600_000 },
-    ]),
+    rateLimitMiddleware(
+      isActionRequest,
+      withSafetyMargin([
+        { limit: 10, windowMs: 1_000 },
+        { limit: 100, windowMs: 60_000 },
+        { limit: 5_000, windowMs: 3_600_000 },
+      ]),
+    ),
   );
   client.use(
-    rateLimitMiddleware(isDataRequest, [
-      { limit: 10, windowMs: 1_000 },
-      { limit: 200, windowMs: 60_000 },
-      { limit: 2_000, windowMs: 3_600_000 },
-    ]),
+    rateLimitMiddleware(
+      isDataRequest,
+      withSafetyMargin([
+        { limit: 10, windowMs: 1_000 },
+        { limit: 200, windowMs: 60_000 },
+        { limit: 2_000, windowMs: 3_600_000 },
+      ]),
+    ),
   );
 
   const getCharacter = (name: string) =>
