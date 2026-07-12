@@ -1,0 +1,2 @@
+# Generated files - do not hand-format, regenerate with `pnpm run generate:api-types`.
+src/client/schema.d.ts
