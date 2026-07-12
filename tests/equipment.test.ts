@@ -46,7 +46,7 @@ const buildItem = (overrides: Partial<Item>): Item => ({
 });
 
 /** A tiny in-memory character whose inventory is mutated by gather/craft, like the real agent would be. */
-const createFakeCharacterState = () => {
+const createFakeCharacterState = (inventoryMaxItems = Number.MAX_SAFE_INTEGER) => {
   const held = new Map<string, number>();
 
   const getCharacter = (): CharacterSnapshot =>
@@ -57,6 +57,7 @@ const createFakeCharacterState = () => {
         quantity,
         slot: index,
       })),
+      inventory_max_items: inventoryMaxItems,
       name: "Cartman",
     }) as CharacterSnapshot;
 
@@ -146,7 +147,14 @@ describe("craftAndEquip", () => {
 
     const result = await craftAndEquip(
       { getItem, getMaps, getResources },
-      { craft, equip, gather, getCharacter: state.getCharacter, moveTo },
+      {
+        craft,
+        depositItems: vi.fn(),
+        equip,
+        gather,
+        getCharacter: state.getCharacter,
+        moveTo,
+      },
       "copper_pickaxe",
     );
 
@@ -155,6 +163,83 @@ describe("craftAndEquip", () => {
     expect(craft).toHaveBeenCalledWith("copper_bar", 6);
     expect(craft).toHaveBeenCalledWith("copper_pickaxe", 1);
     expect(equip).toHaveBeenCalledWith([{ code: "copper_pickaxe", quantity: 1, slot: "weapon" }]);
+  });
+
+  it("deposits everything except the target item at the bank when the inventory fills up mid-gather, then resumes", async () => {
+    const state = createFakeCharacterState(4);
+    state.add("junk_item", 3);
+
+    const getItem = vi.fn((code: string) =>
+      code === "test_axe"
+        ? okAsync({
+            data: buildItem({
+              code: "test_axe",
+              craft: {
+                items: [{ code: "test_ore", quantity: 3 }],
+                level: 1,
+                quantity: 1,
+                skill: "weaponcrafting",
+              },
+              type: "weapon",
+            }),
+          } satisfies ItemResponse)
+        : okAsync({ data: buildItem({ code }) } satisfies ItemResponse),
+    );
+    const getMaps = vi.fn((query?: { content_type?: string }) =>
+      okAsync(
+        buildMapPage([
+          buildMap(
+            query?.content_type === "workshop" ? 328 : query?.content_type === "resource" ? 277 : 0,
+          ),
+        ]),
+      ),
+    );
+    const getResources = vi.fn(() => okAsync(buildResourcePage([buildResource("test_ore_rocks")])));
+
+    const moveTo = vi.fn(() => okAsync(undefined));
+    const gather = vi.fn(() => {
+      state.add("test_ore", 1);
+      return okAsync({
+        character: state.getCharacter(),
+        cooldown: buildCooldown(),
+        details: { items: [], xp: 5 },
+      });
+    });
+    const depositItems = vi.fn((items: { code: string; quantity: number }[]) => {
+      for (const item of items) {
+        state.remove(item.code, item.quantity);
+      }
+      return okAsync({
+        bank: [],
+        character: state.getCharacter(),
+        cooldown: buildCooldown(),
+        items: [],
+      });
+    });
+    const craft = vi.fn((code: string, quantity = 1) => {
+      state.remove("test_ore", quantity * 3);
+      state.add(code, quantity);
+      return okAsync({
+        character: state.getCharacter(),
+        cooldown: buildCooldown(),
+        details: { items: [], xp: 5 },
+      });
+    });
+    const equip = vi.fn(() =>
+      okAsync({ character: state.getCharacter(), cooldown: buildCooldown(), items: [] }),
+    );
+
+    const result = await craftAndEquip(
+      { getItem, getMaps, getResources },
+      { craft, depositItems, equip, gather, getCharacter: state.getCharacter, moveTo },
+      "test_axe",
+    );
+
+    expect(result.isOk()).toBe(true);
+    expect(depositItems).toHaveBeenCalledTimes(1);
+    expect(depositItems).toHaveBeenCalledWith([{ code: "junk_item", quantity: 3 }]);
+    expect(gather).toHaveBeenCalledTimes(3);
+    expect(craft).toHaveBeenCalledWith("test_axe", 1);
   });
 
   it("skips gathering/crafting materials already held in sufficient quantity", async () => {
@@ -196,7 +281,14 @@ describe("craftAndEquip", () => {
 
     const result = await craftAndEquip(
       { getItem, getMaps, getResources },
-      { craft, equip, gather, getCharacter: state.getCharacter, moveTo },
+      {
+        craft,
+        depositItems: vi.fn(),
+        equip,
+        gather,
+        getCharacter: state.getCharacter,
+        moveTo,
+      },
       "copper_pickaxe",
     );
 
@@ -217,6 +309,7 @@ describe("craftAndEquip", () => {
       { getItem, getMaps: vi.fn(), getResources: vi.fn() },
       {
         craft: vi.fn(),
+        depositItems: vi.fn(),
         equip,
         gather: vi.fn(),
         getCharacter: () => ({}) as CharacterSnapshot,
@@ -256,6 +349,7 @@ describe("craftAndEquip", () => {
       { getItem, getMaps, getResources },
       {
         craft: vi.fn(),
+        depositItems: vi.fn(),
         equip: vi.fn(),
         gather: vi.fn(),
         getCharacter: state.getCharacter,
@@ -293,6 +387,7 @@ describe("craftAndEquip", () => {
       { getItem, getMaps, getResources: vi.fn() },
       {
         craft: vi.fn(() => errAsync(apiError)),
+        depositItems: vi.fn(),
         equip: vi.fn(),
         gather: vi.fn(),
         getCharacter: state.getCharacter,

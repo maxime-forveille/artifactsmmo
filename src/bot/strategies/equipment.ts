@@ -4,15 +4,17 @@ import type { ArtifactsApiError, ArtifactsClient } from "../../client/index.js";
 import type { components } from "../../client/schema.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
+import { heldItems, heldQuantity, isInventoryFull } from "../inventory.js";
 import {
+  BANK_CONTENT_CODE,
   findResourceForDrop,
   type LocationNotFoundError,
   resolveLocation,
   type ResourceNotFoundError,
 } from "../world.js";
 
-type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type EquipSlot = components["schemas"]["ItemSlot"];
+type Item = components["schemas"]["ItemSchema"];
 
 export class UnsupportedEquipSlotError extends Error {
   constructor(
@@ -24,8 +26,16 @@ export class UnsupportedEquipSlotError extends Error {
   }
 }
 
+export class InventoryFullError extends Error {
+  constructor(public readonly itemCode: string) {
+    super(`Inventory is full of "${itemCode}" itself, with nothing else to deposit to make room`);
+    this.name = "InventoryFullError";
+  }
+}
+
 export type EquipmentError =
   | ArtifactsApiError
+  | InventoryFullError
   | LocationNotFoundError
   | ResourceNotFoundError
   | UnsupportedEquipSlotError;
@@ -33,7 +43,7 @@ export type EquipmentError =
 type EquipmentClient = Pick<ArtifactsClient, "getItem" | "getMaps" | "getResources">;
 type EquipmentAgent = Pick<
   CharacterAgent,
-  "craft" | "equip" | "gather" | "getCharacter" | "moveTo"
+  "craft" | "depositItems" | "equip" | "gather" | "getCharacter" | "moveTo"
 >;
 
 // Only the item types produced by the currently craftable level-1 gear.
@@ -51,19 +61,115 @@ const EQUIP_SLOT_BY_ITEM_TYPE: Partial<Record<string, EquipSlot>> = {
   weapon: "weapon",
 };
 
-const heldQuantity = (character: CharacterSnapshot, itemCode: string): number =>
-  (character.inventory ?? [])
-    .filter((slot) => slot.code === itemCode)
-    .reduce((total, slot) => total + slot.quantity, 0);
+/**
+ * Deposits everything except `itemCode` at the bank, then returns to
+ * `resourceMapId`, freeing up inventory room without losing progress on the
+ * item currently being gathered. Fails with `InventoryFullError` if
+ * `itemCode` itself is the only thing held (nothing safe to drop).
+ */
+const makeRoomForGathering = (
+  client: EquipmentClient,
+  agent: Pick<EquipmentAgent, "depositItems" | "getCharacter" | "moveTo">,
+  itemCode: string,
+  resourceMapId: number,
+): ResultAsync<void, EquipmentError> => {
+  const character = agent.getCharacter();
+  const itemsToDeposit = heldItems(character).filter((item) => item.code !== itemCode);
+
+  if (itemsToDeposit.length === 0) {
+    return errAsync(new InventoryFullError(itemCode));
+  }
+
+  logger.info(
+    { character: character.name, items: itemsToDeposit },
+    `${character.name}: inventory full, depositing ${itemsToDeposit.length} item type(s) at the bank before continuing to gather ${itemCode}`,
+  );
+
+  return resolveLocation(client, "bank", BANK_CONTENT_CODE)
+    .andThen((bankMap) => agent.moveTo(bankMap.map_id))
+    .andThen(() => agent.depositItems(itemsToDeposit))
+    .andThen(() => agent.moveTo(resourceMapId))
+    .map(() => undefined);
+};
 
 const gatherUntilHave = (
-  agent: Pick<EquipmentAgent, "gather" | "getCharacter">,
+  client: EquipmentClient,
+  agent: Pick<EquipmentAgent, "depositItems" | "gather" | "getCharacter" | "moveTo">,
   itemCode: string,
   targetQuantity: number,
-): ResultAsync<void, ArtifactsApiError> =>
-  heldQuantity(agent.getCharacter(), itemCode) >= targetQuantity
-    ? okAsync(undefined)
-    : agent.gather().andThen(() => gatherUntilHave(agent, itemCode, targetQuantity));
+  resourceMapId: number,
+): ResultAsync<void, EquipmentError> => {
+  const character = agent.getCharacter();
+
+  if (heldQuantity(character, itemCode) >= targetQuantity) {
+    return okAsync(undefined);
+  }
+
+  if (isInventoryFull(character)) {
+    return makeRoomForGathering(client, agent, itemCode, resourceMapId).andThen(() =>
+      gatherUntilHave(client, agent, itemCode, targetQuantity, resourceMapId),
+    );
+  }
+
+  return agent
+    .gather()
+    .andThen(() => gatherUntilHave(client, agent, itemCode, targetQuantity, resourceMapId));
+};
+
+/**
+ * Same as `ensureHeld`, but for when the item's data has already been
+ * fetched (e.g. by the caller, to avoid an extra `getItem` round-trip for
+ * the same code).
+ */
+const ensureHeldItem = (
+  client: EquipmentClient,
+  agent: EquipmentAgent,
+  item: Item,
+  quantity: number,
+): ResultAsync<void, EquipmentError> => {
+  const itemCode = item.code;
+  const held = heldQuantity(agent.getCharacter(), itemCode);
+
+  if (held >= quantity) {
+    return okAsync(undefined);
+  }
+
+  const missing = quantity - held;
+
+  if (item.craft?.skill !== undefined) {
+    const craftSkill = item.craft.skill;
+    const craftYield = item.craft.quantity ?? 1;
+    const craftsNeeded = Math.ceil(missing / craftYield);
+    const materials = item.craft.items ?? [];
+
+    return materials
+      .reduce<ResultAsync<void, EquipmentError>>(
+        (acc, material) =>
+          acc.andThen(() =>
+            ensureHeld(client, agent, material.code, material.quantity * craftsNeeded),
+          ),
+        okAsync(undefined),
+      )
+      .andThen(() => resolveLocation(client, "workshop", craftSkill))
+      .andThen((workshopMap) => agent.moveTo(workshopMap.map_id))
+      .andThen(() => {
+        logger.info(
+          { character: agent.getCharacter().name, item: itemCode, quantity: craftsNeeded },
+          `${agent.getCharacter().name}: crafting ${craftsNeeded}x ${itemCode}`,
+        );
+        return agent.craft(itemCode, craftsNeeded);
+      })
+      .map(() => undefined);
+  }
+
+  return findResourceForDrop(client, itemCode)
+    .andThen((resource) => resolveLocation(client, "resource", resource.code))
+    .andThen((resourceMap) =>
+      agent
+        .moveTo(resourceMap.map_id)
+        .andThen(() => gatherUntilHave(client, agent, itemCode, quantity, resourceMap.map_id)),
+    );
+};
 
 /**
  * Makes sure the character holds at least `quantity` of `itemCode`,
@@ -78,50 +184,12 @@ const ensureHeld = (
   agent: EquipmentAgent,
   itemCode: string,
   quantity: number,
-): ResultAsync<void, EquipmentError> => {
-  const held = heldQuantity(agent.getCharacter(), itemCode);
-
-  if (held >= quantity) {
-    return okAsync(undefined);
-  }
-
-  const missing = quantity - held;
-
-  return client.getItem(itemCode).andThen((response) => {
-    const item = response.data;
-
-    if (item.craft?.skill !== undefined) {
-      const craftSkill = item.craft.skill;
-      const craftYield = item.craft.quantity ?? 1;
-      const craftsNeeded = Math.ceil(missing / craftYield);
-      const materials = item.craft.items ?? [];
-
-      return materials
-        .reduce<ResultAsync<void, EquipmentError>>(
-          (acc, material) =>
-            acc.andThen(() =>
-              ensureHeld(client, agent, material.code, material.quantity * craftsNeeded),
-            ),
-          okAsync(undefined),
-        )
-        .andThen(() => resolveLocation(client, "workshop", craftSkill))
-        .andThen((workshopMap) => agent.moveTo(workshopMap.map_id))
-        .andThen(() => {
-          logger.info(
-            { character: agent.getCharacter().name, item: itemCode, quantity: craftsNeeded },
-            `${agent.getCharacter().name}: crafting ${craftsNeeded}x ${itemCode}`,
-          );
-          return agent.craft(itemCode, craftsNeeded);
-        })
-        .map(() => undefined);
-    }
-
-    return findResourceForDrop(client, itemCode)
-      .andThen((resource) => resolveLocation(client, "resource", resource.code))
-      .andThen((resourceMap) => agent.moveTo(resourceMap.map_id))
-      .andThen(() => gatherUntilHave(agent, itemCode, quantity));
-  });
-};
+): ResultAsync<void, EquipmentError> =>
+  heldQuantity(agent.getCharacter(), itemCode) >= quantity
+    ? okAsync(undefined)
+    : client
+        .getItem(itemCode)
+        .andThen((response) => ensureHeldItem(client, agent, response.data, quantity));
 
 /**
  * Crafts `itemCode` (gathering/crafting whatever materials are missing
@@ -140,7 +208,7 @@ export const craftAndEquip = (
       return errAsync(new UnsupportedEquipSlotError(itemCode, item.type));
     }
 
-    return ensureHeld(client, agent, itemCode, 1).andThen(() => {
+    return ensureHeldItem(client, agent, item, 1).andThen(() => {
       logger.info(
         { character: agent.getCharacter().name, item: itemCode, slot },
         `${agent.getCharacter().name}: equipping ${itemCode} in ${slot}`,

@@ -7,6 +7,9 @@ type MapContentType = components["schemas"]["MapContentType"];
 type Map = components["schemas"]["MapSchema"];
 type Resource = components["schemas"]["ResourceSchema"];
 
+/** The map content code shared by every bank location in the game. */
+export const BANK_CONTENT_CODE = "bank";
+
 export class LocationNotFoundError extends Error {
   constructor(
     public readonly contentType: MapContentType,

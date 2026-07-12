@@ -1,31 +1,15 @@
 import { okAsync, type ResultAsync } from "neverthrow";
 
 import type { ArtifactsApiError, ArtifactsClient } from "../../client/index.js";
-import type { components } from "../../client/schema.js";
+import { heldItems, isInventoryFull, totalItemCount } from "../inventory.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
-import { type LocationNotFoundError, resolveLocation } from "../world.js";
-
-type CharacterSnapshot = components["schemas"]["CharacterSchema"];
-type SimpleItem = components["schemas"]["SimpleItemSchema"];
-
-const BANK_CONTENT_CODE = "bank";
+import { BANK_CONTENT_CODE, type LocationNotFoundError, resolveLocation } from "../world.js";
 
 export type FarmingError = ArtifactsApiError | LocationNotFoundError;
 
 type FarmingClient = Pick<ArtifactsClient, "getMaps">;
 type FarmingAgent = Pick<CharacterAgent, "depositItems" | "gather" | "getCharacter" | "moveTo">;
-
-const totalItemCount = (character: CharacterSnapshot): number =>
-  (character.inventory ?? []).reduce((total, slot) => total + slot.quantity, 0);
-
-const isInventoryFull = (character: CharacterSnapshot): boolean =>
-  totalItemCount(character) >= character.inventory_max_items;
-
-const heldItems = (character: CharacterSnapshot): SimpleItem[] =>
-  (character.inventory ?? [])
-    .filter((slot) => slot.code !== "" && slot.quantity > 0)
-    .map((slot) => ({ code: slot.code, quantity: slot.quantity }));
 
 const gatherUntilFull = (
   agent: Pick<FarmingAgent, "gather" | "getCharacter">,
