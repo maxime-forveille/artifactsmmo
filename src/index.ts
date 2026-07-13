@@ -2,13 +2,10 @@ import { type Task, runTask } from "./bot/tasks/runTask.js";
 import { bot } from "./client/index.js";
 import { logger } from "./utils/logger.js";
 
-// Craft/equip wooden_staff (a no-op if already equipped), then switch to
-// hunting yellow_slime forever.
-const TASK: Task = {
-  items: ["wooden_staff"],
-  monster: "yellow_slime",
-  type: "craftAndEquipThenHunt",
-};
+// Automatically picks the highest-level monster that's still safe to
+// fight (see findNextSafeMonster), re-evaluated every cycle - so a
+// character naturally moves to a tougher target as it levels up.
+const TASK: Task = { type: "autoHunt" };
 
 const ASSIGNMENTS: readonly { readonly character: string; readonly task: Task }[] = [
   { character: "Cartman", task: TASK },

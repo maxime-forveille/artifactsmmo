@@ -9,6 +9,7 @@ import type { components } from "../src/client/schema.js";
 type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type Cooldown = components["schemas"]["CooldownSchema"];
 type Item = components["schemas"]["ItemSchema"];
+type Monster = components["schemas"]["MonsterSchema"];
 
 const buildItem = (overrides: Partial<Item>): Item => ({
   ...({} as Item),
@@ -31,6 +32,46 @@ const buildCharacter = (overrides: Partial<CharacterSnapshot> = {}): CharacterSn
   name: "Cartman",
   ...overrides,
 });
+
+// Full set of combat stats needed by isSafeToFight, all zeroed out by
+// default so tests can override just the fields they care about.
+const buildCombatCharacter = (overrides: Partial<CharacterSnapshot> = {}): CharacterSnapshot =>
+  buildCharacter({
+    attack_air: 0,
+    attack_earth: 0,
+    attack_fire: 0,
+    attack_water: 0,
+    critical_strike: 0,
+    dmg: 0,
+    dmg_air: 0,
+    dmg_earth: 0,
+    dmg_fire: 0,
+    dmg_water: 0,
+    hp: 100,
+    level: 1,
+    res_air: 0,
+    res_earth: 0,
+    res_fire: 0,
+    res_water: 0,
+    ...overrides,
+  });
+
+const buildMonster = (overrides: Partial<Monster> = {}): Monster =>
+  ({
+    attack_air: 0,
+    attack_earth: 0,
+    attack_fire: 0,
+    attack_water: 0,
+    code: "chicken",
+    critical_strike: 0,
+    hp: 60,
+    level: 1,
+    res_air: 0,
+    res_earth: 0,
+    res_fire: 0,
+    res_water: 0,
+    ...overrides,
+  }) as Monster;
 
 const notImplemented = () =>
   errAsync(new ArtifactsApiError("not implemented in test", 501, undefined));
@@ -227,6 +268,72 @@ describe("runTask", () => {
 
       await vi.advanceTimersByTimeAsync(1);
       expect(getMaps).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("autoHunt task", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("picks a safe monster via findNextSafeMonster, then hunts it", async () => {
+      const character = buildCombatCharacter({ attack_earth: 20, hp: 150, level: 4 });
+      const monster = buildMonster({ attack_water: 4, code: "chicken", hp: 60, level: 1 });
+      const getMonsters = vi.fn(() =>
+        okAsync({ data: [monster], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      // Let the hunting cycle itself fail so we can reuse the same
+      // retry-timing assertions as the other task tests below.
+      const apiError = new ArtifactsApiError("boom", 500, undefined);
+      const getMaps = vi.fn(() => errAsync(apiError));
+      const client = buildFakeClient({
+        getCharacter: () => okAsync({ data: character }),
+        getMaps,
+        getMonsters,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getMonsters).toHaveBeenCalledWith({ max_level: 4 });
+      expect(getMaps).toHaveBeenCalledTimes(1); // resolveLocation("monster", "chicken")
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(getMaps).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(getMaps).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries after a delay when no monster is currently safe to fight", async () => {
+      const character = buildCombatCharacter({ hp: 10, level: 4 }); // 0 attack in every element
+      const dangerousMonster = buildMonster({ attack_earth: 50, code: "cow", hp: 2_000, level: 4 });
+      const getMonsters = vi.fn(() =>
+        okAsync({ data: [dangerousMonster], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      const getMaps = vi.fn();
+      const client = buildFakeClient({
+        getCharacter: () => okAsync({ data: character }),
+        getMaps,
+        getMonsters,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getMonsters).toHaveBeenCalledTimes(1);
+      expect(getMaps).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(getMonsters).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(getMonsters).toHaveBeenCalledTimes(2);
     });
   });
 });

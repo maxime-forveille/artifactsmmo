@@ -203,10 +203,14 @@ Recently delivered (see git log for details):
   `Task` yet (it needs both characters on the same tile, which the current
   one-character-per-task model doesn't coordinate), but available and used
   for one-off moves like consolidating a spare weapon onto one character
+- ✅ `autoHunt` task: picks the highest-level monster that's still safe to
+  fight, re-evaluated every cycle instead of a fixed monster code (see
+  "Automated progression decisions" below) — all 5 characters run it now
 
 Up next (not yet started, roughly in order of likely value):
 
-- [ ] **Automated progression decisions** — see the design notes below.
+- [ ] **Task-appropriate equipment and target selection by XP/loot rate**
+      — see the design notes below.
 - [ ] A lightweight way to reassign tasks without restarting the process
 - [ ] Grand Exchange trading
 - [ ] Multi-character boss fights
@@ -223,8 +227,7 @@ pieces:
 
 1. ✅ **`isSafeToFight(character, monster)`** (`src/bot/combat.ts`) — a pure
    heuristic deciding whether a fight is worth attempting, before
-   committing to it. Built, unit-tested, not wired into `hunting.ts` or any
-   `Task` yet.
+   committing to it.
    - Per-element damage: attack stat boosted by the attacker's `dmg`/
      `dmg_<element>` % bonuses (characters only — monsters don't have
      these), then mitigated by the defender's resistance to that element,
@@ -245,8 +248,9 @@ pieces:
    highest-level one `isSafeToFight` still allows (a stand-in for "most
    XP/loot" until the real rate estimate in point 4 exists). Returns
    `undefined` when nothing qualifies, which callers should treat as "go
-   upgrade gear instead" (point 3). Built, unit-tested, not wired into
-   `hunting.ts` or any `Task` yet.
+   upgrade gear instead" (point 3). Wired in as the new `autoHunt` `Task`
+   (`src/bot/tasks/runTask.ts`), which re-picks the target every cycle
+   instead of using a fixed monster code — all 5 characters run it now.
 3. **Task-appropriate equipment ("build per task")** — equip whatever fits
    the activity at hand, not just the highest raw combat stats. E.g.
    `copper_pickaxe`'s -10% mining cooldown matters while mining,
