@@ -54,12 +54,17 @@ pnpm dev
 │   │   ├── strategies/     # farming.ts, hunting.ts, equipment.ts, banking.ts:
 │   │   │                   # gathering, combat, craft+equip, and bank-deposit
 │   │   │                   # pipelines
-│   │   ├── tasks/          # runTask.ts: Task type (farm / hunt /
-│   │   │                   # craftAndEquip) + dispatcher describing what a
-│   │   │                   # character should be doing, run or continuous
+│   │   ├── tasks/          # task.ts: the Task type (farm / hunt / autoHunt /
+│   │   │                   # craftAndEquip / craftAndEquipThenHunt);
+│   │   │                   # runTask.ts: dispatcher; taskRunners.ts: one
+│   │   │                   # runner per task type; runForever.ts: shared
+│   │   │                   # retry-forever loop
 │   │   ├── combat.ts        # fightSafely: rests when HP is low, fights once,
-│   │   │                    # logs a loss - shared by hunting.ts and
-│   │   │                    # equipment.ts's monster-drop fallback
+│   │   │                    # logs a loss; averageDamagePerTurn/isSafeToFight:
+│   │   │                    # the damage model shared with gear.ts
+│   │   ├── gear.ts          # Task-appropriate equipment: findBestGatheringTool
+│   │   │                    # (best tool for a gathering skill) and
+│   │   │                    # findBestCombatWeapon (best weapon vs a monster)
 │   │   ├── inventory.ts     # Pure helpers over a character's inventory
 │   │   │                    # (held quantity, full-capacity checks, ...)
 │   │   ├── progression.ts   # Automated decision layer (in progress): what
@@ -206,11 +211,15 @@ Recently delivered (see git log for details):
 - ✅ `autoHunt` task: picks the highest-level monster that's still safe to
   fight, re-evaluated every cycle instead of a fixed monster code (see
   "Automated progression decisions" below) — all 5 characters run it now
+- ✅ Task-appropriate equipment: `farm` equips the best gathering tool for
+  the resource's skill before gathering, and `hunt`/`autoHunt` equip the
+  best weapon against the specific monster being fought, both via the
+  existing bank-aware `craftAndEquip` (see "Automated progression
+  decisions" below)
 
 Up next (not yet started, roughly in order of likely value):
 
-- [ ] **Task-appropriate equipment and target selection by XP/loot rate**
-      — see the design notes below.
+- [ ] **Target selection by XP/loot rate** — see the design notes below.
 - [ ] A lightweight way to reassign tasks without restarting the process
 - [ ] Grand Exchange trading
 - [ ] Multi-character boss fights
@@ -251,17 +260,32 @@ pieces:
    upgrade gear instead" (point 3). Wired in as the new `autoHunt` `Task`
    (`src/bot/tasks/runTask.ts`), which re-picks the target every cycle
    instead of using a fixed monster code — all 5 characters run it now.
-3. **Task-appropriate equipment ("build per task")** — equip whatever fits
-   the activity at hand, not just the highest raw combat stats. E.g.
-   `copper_pickaxe`'s -10% mining cooldown matters while mining,
-   `copper_axe`'s -10% woodcutting cooldown while woodcutting, and the
-   highest safe damage/crit weapon while hunting. Most of the plumbing for
-   this already exists — `craftAndEquip` is bank-aware, idempotent, and can
-   reclaim items from other slots or withdraw them from the bank — so this
-   piece is mainly about _choosing_ the right item per activity and
-   triggering the swap, not new low-level capabilities. Also where
-   `findNextSafeMonster` returning `undefined` would plug in: try upgrading
-   gear, then re-run the safety check.
+3. ✅ **Task-appropriate equipment ("build per task")** (`src/bot/gear.ts`)
+   — equip whatever fits the activity at hand, not just the highest raw
+   combat stats.
+   - `findBestGatheringTool(client, skill, maxLevel)` — Artifacts MMO models
+     gathering tools as weapons with an effect whose code matches the
+     gathering skill and a negative value (e.g. `copper_pickaxe` has
+     `{code: "mining", value: -10}`, a 10% cooldown reduction). Picks the
+     largest reduction among weapons at or below `maxLevel`. Wired into
+     `runFarmTask`, once before its forever loop (the resource, and so the
+     needed skill, never changes mid-task).
+   - `findBestCombatWeapon(client, character, monster, maxLevel)` — reuses
+     `combat.ts`'s `averageDamagePerTurn` (now exported): removes the
+     currently-equipped weapon's own contribution from the character's
+     stats, adds each candidate weapon's contribution back in, and picks
+     whichever deals the most estimated damage against that specific
+     monster (weapon effect codes like `attack_<element>`, `dmg`,
+     `dmg_<element>`, `critical_strike` map 1:1 onto the same stat names
+     the damage model already uses). Wired into `runHuntTask` (once, fixed
+     monster) and `runAutoHuntTask` (every cycle, since the target — and so
+     the ideal weapon — can change as the character levels up).
+   - Both reuse `craftAndEquip` as-is (bank-aware, idempotent, can reclaim
+     items from other slots) — no new low-level capability was needed, just
+     the selection logic. Failures are logged and non-fatal: the character
+     just keeps whatever's currently equipped.
+   - Still open: `findNextSafeMonster` returning `undefined` doesn't yet
+     trigger "try upgrading gear first" — it just retries later.
 4. **Target selection by XP/loot rate** — replace `findNextSafeMonster`'s
    "highest level that's safe" stand-in with a real estimate — XP/action
    and time/action (accounting for cooldowns) — once there's a reason to
