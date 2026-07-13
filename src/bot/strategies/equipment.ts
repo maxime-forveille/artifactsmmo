@@ -4,13 +4,16 @@ import type { ArtifactsApiError, ArtifactsClient } from "../../client/index.js";
 import type { components } from "../../client/schema.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
+import { fightSafely } from "../combat.js";
 import { heldItems, heldQuantity, isInventoryFull } from "../inventory.js";
 import {
   BANK_CONTENT_CODE,
+  findMonsterForDrop,
   findResourceForDrop,
   type LocationNotFoundError,
+  type MonsterNotFoundError,
   resolveLocation,
-  type ResourceNotFoundError,
+  ResourceNotFoundError,
 } from "../world.js";
 
 type CharacterSnapshot = components["schemas"]["CharacterSchema"];
@@ -38,13 +41,17 @@ export type EquipmentError =
   | ArtifactsApiError
   | InventoryFullError
   | LocationNotFoundError
+  | MonsterNotFoundError
   | ResourceNotFoundError
   | UnsupportedEquipSlotError;
 
-type EquipmentClient = Pick<ArtifactsClient, "getItem" | "getMaps" | "getResources">;
+type EquipmentClient = Pick<
+  ArtifactsClient,
+  "getItem" | "getMaps" | "getMonsters" | "getResources"
+>;
 type EquipmentAgent = Pick<
   CharacterAgent,
-  "craft" | "depositItems" | "equip" | "gather" | "getCharacter" | "moveTo"
+  "craft" | "depositItems" | "equip" | "fight" | "gather" | "getCharacter" | "moveTo" | "rest"
 >;
 
 // Only the item types produced by the currently craftable level-1 gear.
@@ -138,6 +145,31 @@ const gatherUntilHave = (
     .andThen(() => gatherUntilHave(client, agent, itemCode, targetQuantity, resourceMapId));
 };
 
+/** Same as `gatherUntilHave`, but fighting a monster instead of gathering a resource node. */
+const huntUntilHave = (
+  client: EquipmentClient,
+  agent: Pick<EquipmentAgent, "depositItems" | "fight" | "getCharacter" | "moveTo" | "rest">,
+  itemCode: string,
+  targetQuantity: number,
+  monsterMapId: number,
+): ResultAsync<void, EquipmentError> => {
+  const character = agent.getCharacter();
+
+  if (heldQuantity(character, itemCode) >= targetQuantity) {
+    return okAsync(undefined);
+  }
+
+  if (isInventoryFull(character)) {
+    return makeRoomForGathering(client, agent, itemCode, monsterMapId).andThen(() =>
+      huntUntilHave(client, agent, itemCode, targetQuantity, monsterMapId),
+    );
+  }
+
+  return fightSafely(agent).andThen(() =>
+    huntUntilHave(client, agent, itemCode, targetQuantity, monsterMapId),
+  );
+};
+
 /**
  * Same as `ensureHeld`, but for when the item's data has already been
  * fetched (e.g. by the caller, to avoid an extra `getItem` round-trip for
@@ -190,6 +222,17 @@ const ensureHeldItem = (
       agent
         .moveTo(resourceMap.map_id)
         .andThen(() => gatherUntilHave(client, agent, itemCode, quantity, resourceMap.map_id)),
+    )
+    .orElse((error) =>
+      error instanceof ResourceNotFoundError
+        ? findMonsterForDrop(client, itemCode)
+            .andThen((monster) => resolveLocation(client, "monster", monster.code))
+            .andThen((monsterMap) =>
+              agent
+                .moveTo(monsterMap.map_id)
+                .andThen(() => huntUntilHave(client, agent, itemCode, quantity, monsterMap.map_id)),
+            )
+        : errAsync(error),
     );
 };
 

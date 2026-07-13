@@ -5,8 +5,10 @@ import { ArtifactsApiError } from "../src/client/index.js";
 import type { ArtifactsClient } from "../src/client/index.js";
 import type { components } from "../src/client/schema.js";
 import {
+  findMonsterForDrop,
   findResourceForDrop,
   LocationNotFoundError,
+  MonsterNotFoundError,
   resolveLocation,
   ResourceNotFoundError,
 } from "../src/bot/world.js";
@@ -15,6 +17,8 @@ type MapPage = components["schemas"]["StaticDataPage_MapSchema_"];
 type Map = components["schemas"]["MapSchema"];
 type Resource = components["schemas"]["ResourceSchema"];
 type ResourcePage = components["schemas"]["StaticDataPage_ResourceSchema_"];
+type Monster = components["schemas"]["MonsterSchema"];
+type MonsterPage = components["schemas"]["StaticDataPage_MonsterSchema_"];
 
 const buildMap = (overrides: Partial<Map> = {}): Map => ({
   ...({} as Map),
@@ -35,6 +39,19 @@ const buildResource = (overrides: Partial<Resource> = {}): Resource => ({
 });
 
 const buildResourcePage = (data: Resource[]): ResourcePage => ({
+  data,
+  page: 1,
+  pages: 1,
+  size: 50,
+  total: data.length,
+});
+
+const buildMonster = (overrides: Partial<Monster> = {}): Monster => ({
+  ...({} as Monster),
+  ...overrides,
+});
+
+const buildMonsterPage = (data: Monster[]): MonsterPage => ({
   data,
   page: 1,
   pages: 1,
@@ -129,6 +146,49 @@ describe("findResourceForDrop", () => {
     const result = await findResourceForDrop(
       { getResources } as Pick<ArtifactsClient, "getResources">,
       "copper_ore",
+    );
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toBe(apiError);
+  });
+});
+
+describe("findMonsterForDrop", () => {
+  it("returns the first monster that drops the item", async () => {
+    const monster = buildMonster({ code: "chicken" });
+    const getMonsters = vi.fn(() => okAsync(buildMonsterPage([monster])));
+
+    const result = await findMonsterForDrop(
+      { getMonsters } as Pick<ArtifactsClient, "getMonsters">,
+      "feather",
+    );
+
+    expect(getMonsters).toHaveBeenCalledWith({ drop: "feather" });
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toBe(monster);
+  });
+
+  it("returns a MonsterNotFoundError when no monster drops the item", async () => {
+    const getMonsters = vi.fn(() => okAsync(buildMonsterPage([])));
+
+    const result = await findMonsterForDrop(
+      { getMonsters } as Pick<ArtifactsClient, "getMonsters">,
+      "wooden_stick",
+    );
+
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error).toBeInstanceOf(MonsterNotFoundError);
+    expect((error as MonsterNotFoundError).itemCode).toBe("wooden_stick");
+  });
+
+  it("propagates a getMonsters failure without swallowing it", async () => {
+    const apiError = new ArtifactsApiError("boom", 500, undefined);
+    const getMonsters = vi.fn(() => errAsync(apiError));
+
+    const result = await findMonsterForDrop(
+      { getMonsters } as Pick<ArtifactsClient, "getMonsters">,
+      "feather",
     );
 
     expect(result.isErr()).toBe(true);

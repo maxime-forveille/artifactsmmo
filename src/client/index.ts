@@ -152,6 +152,9 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
   const getResources = (query?: paths["/resources"]["get"]["parameters"]["query"]) =>
     toResult(client.GET("/resources", { params: query === undefined ? {} : { query } }));
 
+  const getMonsters = (query?: paths["/monsters"]["get"]["parameters"]["query"]) =>
+    toResult(client.GET("/monsters", { params: query === undefined ? {} : { query } }));
+
   const moveCharacter = (name: string, destination: components["schemas"]["DestinationSchema"]) =>
     toResult(
       client.POST("/my/{name}/action/move", {
@@ -233,6 +236,7 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
     getCharacter,
     getItem,
     getMaps,
+    getMonsters,
     getResources,
     moveCharacter,
     rest,

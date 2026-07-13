@@ -47,6 +47,7 @@ const buildFakeClient = (overrides: Partial<ArtifactsClient> = {}): ArtifactsCli
     getCharacter: () => okAsync({ data: buildCharacter() }),
     getItem: notImplemented,
     getMaps: notImplemented,
+    getMonsters: notImplemented,
     getResources: notImplemented,
     moveCharacter: notImplemented,
     rest: notImplemented,
@@ -136,6 +137,34 @@ describe("runTask", () => {
       const client = buildFakeClient({ getMaps });
 
       void runTask(client, "Cartman", { resource: "copper_rocks", type: "farm" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getMaps).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(getMaps).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(getMaps).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("hunt task", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("retries after a delay when a hunting cycle fails", async () => {
+      const apiError = new ArtifactsApiError("boom", 500, undefined);
+      const getMaps = vi.fn(() => errAsync(apiError));
+      const client = buildFakeClient({ getMaps });
+
+      void runTask(client, "Cartman", { monster: "chicken", type: "hunt" });
 
       await vi.advanceTimersByTimeAsync(0);
       expect(getMaps).toHaveBeenCalledTimes(1);

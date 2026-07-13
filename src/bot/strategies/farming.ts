@@ -1,10 +1,11 @@
 import { okAsync, type ResultAsync } from "neverthrow";
 
 import type { ArtifactsApiError, ArtifactsClient } from "../../client/index.js";
-import { heldItems, isInventoryFull, totalItemCount } from "../inventory.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
-import { BANK_CONTENT_CODE, type LocationNotFoundError, resolveLocation } from "../world.js";
+import { isInventoryFull, totalItemCount } from "../inventory.js";
+import { type LocationNotFoundError, resolveLocation } from "../world.js";
+import { type BankingError, goToBankAndDepositEverything } from "./banking.js";
 
 export type FarmingError = ArtifactsApiError | LocationNotFoundError;
 
@@ -27,24 +28,6 @@ const gatherUntilFull = (
   return agent.gather().andThen(() => gatherUntilFull(agent));
 };
 
-const depositEverything = (
-  agent: Pick<FarmingAgent, "depositItems" | "getCharacter">,
-): ResultAsync<void, FarmingError> => {
-  const character = agent.getCharacter();
-  const items = heldItems(character);
-
-  if (items.length === 0) {
-    return okAsync(undefined);
-  }
-
-  logger.info(
-    { character: character.name, items },
-    `${character.name}: depositing ${items.length} item type(s) at the bank`,
-  );
-
-  return agent.depositItems(items).map(() => undefined);
-};
-
 /**
  * Runs one full farming cycle for `resourceCode`: move to the resource,
  * gather until the inventory is full (or an action fails), then move to a
@@ -54,7 +37,7 @@ export const runFarmingCycle = (
   client: FarmingClient,
   agent: FarmingAgent,
   resourceCode: string,
-): ResultAsync<void, FarmingError> => {
+): ResultAsync<void, FarmingError | BankingError> => {
   const character = agent.getCharacter();
   logger.info(
     { character: character.name, resource: resourceCode },
@@ -64,7 +47,5 @@ export const runFarmingCycle = (
   return resolveLocation(client, "resource", resourceCode)
     .andThen((resourceMap) => agent.moveTo(resourceMap.map_id))
     .andThen(() => gatherUntilFull(agent))
-    .andThen(() => resolveLocation(client, "bank", BANK_CONTENT_CODE))
-    .andThen((bankMap) => agent.moveTo(bankMap.map_id))
-    .andThen(() => depositEverything(agent));
+    .andThen(() => goToBankAndDepositEverything(client, agent));
 };

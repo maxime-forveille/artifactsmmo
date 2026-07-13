@@ -76,6 +76,19 @@ const buildEquipResponse = (expiration: string): EquipmentResponse => ({
   },
 });
 
+type FightResponse = components["schemas"]["CharacterFightResponseSchema"];
+
+const buildFightResponse = (
+  expiration: string,
+  characters: CharacterSnapshot[],
+): FightResponse => ({
+  data: {
+    characters,
+    cooldown: buildCooldown(expiration),
+    fight: { logs: [], opponent: "chicken", result: "win", turns: 3, characters: [] },
+  },
+});
+
 const notImplemented = () =>
   errAsync(new ArtifactsApiError("not implemented in test", 501, undefined));
 
@@ -252,6 +265,26 @@ describe("createCharacterAgent", () => {
 
     expect(craft).toHaveBeenCalledWith("Cartman", "copper_bar", 6);
     expect(result.isOk()).toBe(true);
+  });
+
+  it("fight forwards participants and updates the cached snapshot from the matching entry", async () => {
+    const fight = vi.fn(() =>
+      okAsync(
+        buildFightResponse("2024-01-01T00:00:05.000Z", [
+          buildCharacter({ hp: 42, map_id: 1, name: "Kyle" }),
+          buildCharacter({ hp: 130, map_id: 1, name: "Cartman" }),
+        ]),
+      ),
+    );
+    const dependencies: Dependencies = { ...defaultDependencies, fight };
+
+    const agent = (await createCharacterAgent(dependencies, "Cartman"))._unsafeUnwrap();
+    const result = await agent.fight(["Kyle"]);
+
+    expect(fight).toHaveBeenCalledWith("Cartman", ["Kyle"]);
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap().fight.result).toBe("win");
+    expect(agent.getCharacter().hp).toBe(130);
   });
 
   it("equip forwards the item list to the client", async () => {

@@ -2,7 +2,7 @@ import { errAsync, okAsync } from "neverthrow";
 import { describe, expect, it, vi } from "vitest";
 
 import { craftAndEquip, UnsupportedEquipSlotError } from "../src/bot/strategies/equipment.js";
-import { ResourceNotFoundError } from "../src/bot/world.js";
+import { MonsterNotFoundError } from "../src/bot/world.js";
 import { ArtifactsApiError } from "../src/client/index.js";
 import type { components } from "../src/client/schema.js";
 
@@ -40,6 +40,17 @@ const buildResourcePage = (data: Resource[]): ResourcePage => ({
   total: data.length,
 });
 
+type Monster = components["schemas"]["MonsterSchema"];
+type MonsterPage = components["schemas"]["StaticDataPage_MonsterSchema_"];
+const buildMonster = (code: string): Monster => ({ ...({} as Monster), code });
+const buildMonsterPage = (data: Monster[]): MonsterPage => ({
+  data,
+  page: 1,
+  pages: 1,
+  size: 50,
+  total: data.length,
+});
+
 const buildItem = (overrides: Partial<Item>): Item => ({
   ...({} as Item),
   ...overrides,
@@ -57,7 +68,9 @@ const createFakeCharacterState = (inventoryMaxItems = Number.MAX_SAFE_INTEGER) =
         quantity,
         slot: index,
       })),
+      hp: 100,
       inventory_max_items: inventoryMaxItems,
+      max_hp: 100,
       name: "Cartman",
     }) as CharacterSnapshot;
 
@@ -146,14 +159,16 @@ describe("craftAndEquip", () => {
     );
 
     const result = await craftAndEquip(
-      { getItem, getMaps, getResources },
+      { getItem, getMaps, getMonsters: vi.fn(), getResources },
       {
         craft,
         depositItems: vi.fn(),
         equip,
+        fight: vi.fn(),
         gather,
         getCharacter: state.getCharacter,
         moveTo,
+        rest: vi.fn(),
       },
       "copper_pickaxe",
     );
@@ -174,14 +189,16 @@ describe("craftAndEquip", () => {
     const gather = vi.fn();
 
     const result = await craftAndEquip(
-      { getItem, getMaps: vi.fn(), getResources: vi.fn() },
+      { getItem, getMaps: vi.fn(), getMonsters: vi.fn(), getResources: vi.fn() },
       {
         craft,
         depositItems: vi.fn(),
         equip,
+        fight: vi.fn(),
         gather,
         getCharacter: () => ({ ring1_slot: "copper_ring" }) as CharacterSnapshot,
         moveTo: vi.fn(),
+        rest: vi.fn(),
       },
       "copper_ring",
     );
@@ -257,8 +274,17 @@ describe("craftAndEquip", () => {
     );
 
     const result = await craftAndEquip(
-      { getItem, getMaps, getResources },
-      { craft, depositItems, equip, gather, getCharacter: state.getCharacter, moveTo },
+      { getItem, getMaps, getMonsters: vi.fn(), getResources },
+      {
+        craft,
+        depositItems,
+        equip,
+        fight: vi.fn(),
+        gather,
+        getCharacter: state.getCharacter,
+        moveTo,
+        rest: vi.fn(),
+      },
       "test_axe",
     );
 
@@ -307,14 +333,16 @@ describe("craftAndEquip", () => {
     );
 
     const result = await craftAndEquip(
-      { getItem, getMaps, getResources },
+      { getItem, getMaps, getMonsters: vi.fn(), getResources },
       {
         craft,
         depositItems: vi.fn(),
         equip,
+        fight: vi.fn(),
         gather,
         getCharacter: state.getCharacter,
         moveTo,
+        rest: vi.fn(),
       },
       "copper_pickaxe",
     );
@@ -333,14 +361,16 @@ describe("craftAndEquip", () => {
     const equip = vi.fn();
 
     const result = await craftAndEquip(
-      { getItem, getMaps: vi.fn(), getResources: vi.fn() },
+      { getItem, getMaps: vi.fn(), getMonsters: vi.fn(), getResources: vi.fn() },
       {
         craft: vi.fn(),
         depositItems: vi.fn(),
         equip,
+        fight: vi.fn(),
         gather: vi.fn(),
         getCharacter: () => ({}) as CharacterSnapshot,
         moveTo: vi.fn(),
+        rest: vi.fn(),
       },
       "strange_artifact",
     );
@@ -350,7 +380,91 @@ describe("craftAndEquip", () => {
     expect(equip).not.toHaveBeenCalled();
   });
 
-  it("propagates a ResourceNotFoundError when a raw material can't be gathered", async () => {
+  it("falls back to hunting a monster when a raw material isn't a gatherable resource", async () => {
+    const state = createFakeCharacterState();
+
+    const getItem = vi.fn((code: string) =>
+      code === "apprentice_gloves"
+        ? okAsync({
+            data: buildItem({
+              code: "apprentice_gloves",
+              craft: {
+                items: [{ code: "feather", quantity: 3 }],
+                level: 1,
+                quantity: 1,
+                skill: "weaponcrafting",
+              },
+              type: "weapon",
+            }),
+          } satisfies ItemResponse)
+        : okAsync({ data: buildItem({ code }) } satisfies ItemResponse),
+    );
+    const getMaps = vi.fn((query?: { content_type?: string }) =>
+      okAsync(
+        buildMapPage([
+          buildMap(
+            query?.content_type === "workshop" ? 328 : query?.content_type === "monster" ? 411 : 0,
+          ),
+        ]),
+      ),
+    );
+    const getResources = vi.fn(() => okAsync(buildResourcePage([]))); // nothing gathers "feather"
+    const getMonsters = vi.fn(() => okAsync(buildMonsterPage([buildMonster("chicken")])));
+
+    const moveTo = vi.fn(() => okAsync(undefined));
+    const fight = vi.fn(() => {
+      state.add("feather", 1);
+      return okAsync({
+        character: state.getCharacter(),
+        characters: [],
+        cooldown: buildCooldown(),
+        fight: {
+          characters: [],
+          logs: [],
+          opponent: "chicken",
+          result: "win" as const,
+          turns: 3,
+        },
+      });
+    });
+    const equip = vi.fn(() =>
+      okAsync({ character: state.getCharacter(), cooldown: buildCooldown(), items: [] }),
+    );
+    const craft = vi.fn((code: string, quantity = 1) => {
+      state.remove("feather", quantity * 3);
+      state.add(code, quantity);
+      return okAsync({
+        character: state.getCharacter(),
+        cooldown: buildCooldown(),
+        details: { items: [], xp: 5 },
+      });
+    });
+
+    const result = await craftAndEquip(
+      { getItem, getMaps, getMonsters, getResources },
+      {
+        craft,
+        depositItems: vi.fn(),
+        equip,
+        fight,
+        gather: vi.fn(),
+        getCharacter: state.getCharacter,
+        moveTo,
+        rest: vi.fn(),
+      },
+      "apprentice_gloves",
+    );
+
+    expect(result.isOk()).toBe(true);
+    expect(getResources).toHaveBeenCalled();
+    expect(fight).toHaveBeenCalledTimes(3);
+    expect(craft).toHaveBeenCalledWith("apprentice_gloves", 1);
+    expect(equip).toHaveBeenCalledWith([
+      { code: "apprentice_gloves", quantity: 1, slot: "weapon" },
+    ]);
+  });
+
+  it("propagates a MonsterNotFoundError when a raw material can't be gathered or hunted", async () => {
     const state = createFakeCharacterState();
 
     const getItem = vi.fn((code: string) =>
@@ -370,23 +484,26 @@ describe("craftAndEquip", () => {
         : okAsync({ data: buildItem({ code }) } satisfies ItemResponse),
     );
     const getMaps = vi.fn(() => okAsync(buildMapPage([buildMap(328)])));
-    const getResources = vi.fn(() => okAsync(buildResourcePage([]))); // nothing drops "feather"
+    const getResources = vi.fn(() => okAsync(buildResourcePage([]))); // nothing gathers "feather"
+    const getMonsters = vi.fn(() => okAsync(buildMonsterPage([]))); // nothing drops "feather" either
 
     const result = await craftAndEquip(
-      { getItem, getMaps, getResources },
+      { getItem, getMaps, getMonsters, getResources },
       {
         craft: vi.fn(),
         depositItems: vi.fn(),
         equip: vi.fn(),
+        fight: vi.fn(),
         gather: vi.fn(),
         getCharacter: state.getCharacter,
         moveTo: vi.fn(() => okAsync(undefined)),
+        rest: vi.fn(),
       },
       "apprentice_gloves",
     );
 
     expect(result.isErr()).toBe(true);
-    expect(result._unsafeUnwrapErr()).toBeInstanceOf(ResourceNotFoundError);
+    expect(result._unsafeUnwrapErr()).toBeInstanceOf(MonsterNotFoundError);
   });
 
   it("propagates an ArtifactsApiError from a failed craft call", async () => {
@@ -411,14 +528,16 @@ describe("craftAndEquip", () => {
     const getMaps = vi.fn(() => okAsync(buildMapPage([buildMap(328)])));
 
     const result = await craftAndEquip(
-      { getItem, getMaps, getResources: vi.fn() },
+      { getItem, getMaps, getMonsters: vi.fn(), getResources: vi.fn() },
       {
         craft: vi.fn(() => errAsync(apiError)),
         depositItems: vi.fn(),
         equip: vi.fn(),
+        fight: vi.fn(),
         gather: vi.fn(),
         getCharacter: state.getCharacter,
         moveTo: vi.fn(() => okAsync(undefined)),
+        rest: vi.fn(),
       },
       "copper_pickaxe",
     );

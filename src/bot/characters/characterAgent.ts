@@ -33,11 +33,14 @@ const buildCharacterAgent = (
   let nextActionAt = initial.cooldown_expiration;
   let character = initial;
 
-  // Every action response carries the character's cooldown, and every one
-  // except `fight` (which involves up to 3 characters, see `characters`
-  // instead) carries a fresh, singular `character` snapshot. Both are
-  // recorded here so the rest of the agent never has to guess whether a
-  // cooldown is still running or where the character currently is.
+  // Every action response carries the character's cooldown and a fresh
+  // `character` snapshot. `fight` is the one exception at the API level - it
+  // returns a `characters` array instead (fights can involve up to 3
+  // characters against a boss), so `fight` below picks out this character's
+  // own entry and reshapes it to fit the same `character` field before
+  // reaching `withCooldown`. Both are recorded here so the rest of the agent
+  // never has to guess whether a cooldown is still running, where the
+  // character currently is, or its current HP/inventory after a fight.
   const withCooldown = <T extends { cooldown: Cooldown; character?: CharacterSnapshot }>(
     actionName: string,
     action: () => ResultAsync<T, ArtifactsApiError>,
@@ -100,7 +103,13 @@ const buildCharacterAgent = (
     withCooldown("equip", () => client.equip(name, items).map((response) => response.data));
 
   const fight = (participants?: readonly string[]) =>
-    withCooldown("fight", () => client.fight(name, participants).map((response) => response.data));
+    withCooldown("fight", () =>
+      client.fight(name, participants).map((response) => {
+        const data = response.data;
+        const self = data.characters.find((c) => c.name === name);
+        return self === undefined ? data : { ...data, character: self };
+      }),
+    );
 
   const depositItems = (items: SimpleItem[]) =>
     withCooldown("depositItems", () =>

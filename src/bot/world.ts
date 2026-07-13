@@ -6,6 +6,7 @@ import type { components } from "../client/schema.js";
 type MapContentType = components["schemas"]["MapContentType"];
 type Map = components["schemas"]["MapSchema"];
 type Resource = components["schemas"]["ResourceSchema"];
+type Monster = components["schemas"]["MonsterSchema"];
 
 /** The map content code shared by every bank location in the game. */
 export const BANK_CONTENT_CODE = "bank";
@@ -24,6 +25,13 @@ export class ResourceNotFoundError extends Error {
   constructor(public readonly itemCode: string) {
     super(`No gatherable resource drops "${itemCode}"`);
     this.name = "ResourceNotFoundError";
+  }
+}
+
+export class MonsterNotFoundError extends Error {
+  constructor(public readonly itemCode: string) {
+    super(`No monster drops "${itemCode}"`);
+    this.name = "MonsterNotFoundError";
   }
 }
 
@@ -63,4 +71,22 @@ export const findResourceForDrop = (
     const [resource] = page.data;
 
     return resource ? ok(resource) : err(new ResourceNotFoundError(itemCode));
+  });
+
+/**
+ * Finds which monster drops `itemCode` (e.g. "feather" is dropped by the
+ * "chicken" monster). This is the combat equivalent of
+ * `findResourceForDrop`, used when a craft material isn't a gatherable
+ * resource but a monster drop instead.
+ *
+ * Picks the first match returned by the API.
+ */
+export const findMonsterForDrop = (
+  client: Pick<ArtifactsClient, "getMonsters">,
+  itemCode: string,
+): ResultAsync<Monster, ArtifactsApiError | MonsterNotFoundError> =>
+  client.getMonsters({ drop: itemCode }).andThen((page) => {
+    const [monster] = page.data;
+
+    return monster ? ok(monster) : err(new MonsterNotFoundError(itemCode));
   });

@@ -59,11 +59,17 @@ pnpm dev
 │   │   ├── characters/     # characterAgent.ts: cooldown/position-aware agent
 │   │   │                   # factory, shared by all 5 characters (not one
 │   │   │                   # file per character)
-│   │   ├── strategies/     # farming.ts, equipment.ts: farming and
-│   │   │                   # craft+equip pipelines
-│   │   ├── tasks/          # runTask.ts: Task type (farm / craftAndEquip)
-│   │   │                   # + dispatcher describing what a character
-│   │   │                   # should be doing, run or continuous
+│   │   ├── strategies/     # farming.ts, hunting.ts, equipment.ts, banking.ts:
+│   │   │                   # gathering, combat, craft+equip, and bank-deposit
+│   │   │                   # pipelines
+│   │   ├── tasks/          # runTask.ts: Task type (farm / hunt /
+│   │   │                   # craftAndEquip) + dispatcher describing what a
+│   │   │                   # character should be doing, run or continuous
+│   │   ├── combat.ts        # fightSafely: rests when HP is low, fights once,
+│   │   │                    # logs a loss - shared by hunting.ts and
+│   │   │                    # equipment.ts's monster-drop fallback
+│   │   ├── inventory.ts     # Pure helpers over a character's inventory
+│   │   │                    # (held quantity, full-capacity checks, ...)
 │   │   └── world.ts         # Resolves resource/monster/workshop codes to
 │   │                        # map positions
 │   ├── client/              # Typed, Result-based Artifacts MMO API wrapper

@@ -5,19 +5,21 @@ import type { CharacterAgent } from "../characters/characterAgent.js";
 import { createCharacterAgent } from "../characters/characterAgent.js";
 import { craftAndEquip } from "../strategies/equipment.js";
 import { runFarmingCycle } from "../strategies/farming.js";
+import { runHuntingCycle } from "../strategies/hunting.js";
 
 const RETRY_DELAY_MS = 10_000;
 
 /**
- * What a character should be doing. `farm` runs forever; `craftAndEquip`
- * works through `items` in order, then stops. New task types should be
- * added here first, then handled in `runTask`'s switch (the `never` check
- * below makes an unhandled case a compile error rather than a silent
- * no-op).
+ * What a character should be doing. `farm` and `hunt` run forever;
+ * `craftAndEquip` works through `items` in order, then stops. New task
+ * types should be added here first, then handled in `runTask`'s switch
+ * (the `never` check below makes an unhandled case a compile error rather
+ * than a silent no-op).
  */
 export type Task =
   | { readonly type: "craftAndEquip"; readonly items: readonly string[] }
-  | { readonly type: "farm"; readonly resource: string };
+  | { readonly type: "farm"; readonly resource: string }
+  | { readonly type: "hunt"; readonly monster: string };
 
 const runFarmTask = async (
   client: ArtifactsClient,
@@ -37,6 +39,30 @@ const runFarmTask = async (
       },
       async (error) => {
         logger.error(error, `${characterName}: farming cycle failed, retrying shortly`);
+        await waitUntil(new Date(Date.now() + RETRY_DELAY_MS).toISOString());
+      },
+    );
+  }
+};
+
+const runHuntTask = async (
+  client: ArtifactsClient,
+  characterName: string,
+  agent: CharacterAgent,
+  monsterCode: string,
+): Promise<void> => {
+  for (;;) {
+    const result = await runHuntingCycle(client, agent, monsterCode);
+
+    await result.match(
+      async () => {
+        logger.info(
+          { character: characterName, monster: monsterCode },
+          `${characterName}: hunting cycle completed`,
+        );
+      },
+      async (error) => {
+        logger.error(error, `${characterName}: hunting cycle failed, retrying shortly`);
         await waitUntil(new Date(Date.now() + RETRY_DELAY_MS).toISOString());
       },
     );
@@ -94,6 +120,10 @@ export const runTask = async (
         }
         case "farm": {
           await runFarmTask(client, characterName, agent, task.resource);
+          return;
+        }
+        case "hunt": {
+          await runHuntTask(client, characterName, agent, task.monster);
           return;
         }
         default: {
