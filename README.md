@@ -2,38 +2,30 @@
 
 Personal TypeScript bot for managing my 5-character crew in Artifacts MMO.
 
-**Characters:**
-
-- **Cartman** — Main character, primary farmer & general automation
-- **Stan** — Crafter, resource management & item optimization
-- **Kyle** — Combat specialist, raid participant
-- **Kenny** — Scout, exploration & task runner
-- **Butters** — Support, banking & item distribution
+**Characters:** Cartman, Stan, Kyle, Kenny, Butters. There are no fixed roles —
+every character runs the same small set of `Task` types (`farm`, `hunt`,
+`craftAndEquip`), assigned per-character in `src/index.ts`. What each one is
+currently doing has changed several times already (farming → gearing up →
+hunting) as the crew's needs evolved; reassigning someone just means editing
+one line and restarting `pnpm dev`.
 
 ## Status
 
-🚧 **In Development** — Currently building out core functionality
-
-### Planned Features
-
-- [ ] Automated farming loop for Cartman & Kyle
-- [ ] Crafting pipeline (Stan resource management)
-- [ ] Grand Exchange trading bot
-- [ ] Bank synchronization across all characters
-- [ ] Task automation & reward collection
-- [ ] Combat automation for raids
-- [ ] Discord notifications for important events
-- [ ] Web dashboard for monitoring
+🟢 **Working** — the bot runs real gather/combat/craft loops end-to-end
+against the live API. Iterating incrementally: small feature, tested (unit
+tests + live smoke checks), then the next one.
 
 ## Tech Stack
 
 - **Runtime:** Node.js 24.17.0
-- **Language:** TypeScript
-- **API:** Artifacts MMO v8.0.1
+- **Language:** TypeScript 7, compiled/type-checked in strict mode
+- **API:** [Artifacts MMO](https://docs.artifactsmmo.com/), typed via `openapi-fetch` against a generated `schema.d.ts` (see `pnpm generate:api-types`)
+- **Errors:** [`neverthrow`](https://github.com/supermacro/neverthrow) — every client/strategy call returns a `Result`/`ResultAsync`, never throws, so failure paths can't be forgotten
 - **Package Manager:** pnpm 11.9.0 (enforced via `packageManager`/`devEngines` in `package.json`)
-- **Validation:** Valibot
+- **Validation:** Valibot (env vars)
 - **Dates:** date-fns (Temporal isn't natively available yet on Node 24 without `--experimental-temporal` or a polyfill)
-- **Testing:** Vitest
+- **Logging:** pino (pretty-printed in development)
+- **Testing:** Vitest + MSW (for HTTP-contract tests against the client)
 - **Linting/Formatting:** oxlint + oxfmt
 
 ## Quick Start
@@ -72,7 +64,8 @@ pnpm dev
 │   │   │                    # (held quantity, full-capacity checks, ...)
 │   │   └── world.ts         # Resolves resource/monster/workshop codes to
 │   │                        # map positions
-│   ├── client/              # Typed, Result-based Artifacts MMO API wrapper
+│   ├── client/              # Typed, Result-based Artifacts MMO API wrapper,
+│   │                         # incl. a paced rate limiter (see below)
 │   │                         # (schema.d.ts is generated from the OpenAPI spec,
 │   │                         # see 'pnpm generate:api-types')
 │   ├── utils/                # Config, logging, cooldown helpers
@@ -93,106 +86,120 @@ ARTIFACTS_TOKEN=your_jwt_token_here
 LOG_LEVEL=info
 NODE_ENV=development
 
-# Optional
+# Reserved for future use - validated but not wired to anything yet
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ENABLE_NOTIFICATIONS=true
 ```
 
-## Current Implementation
+## What's implemented
 
-### Active Features
-
-#### Cartman — Farming
-
-```typescript
-// Automated resource gathering loop
-- Gathers on available resources
-- Returns to bank when inventory full
-- Logs all activities
-```
-
-#### Stan — Crafting Pipeline
-
-```typescript
-// Resource-to-item automation
-- Pulls materials from bank (Butters)
-- Crafts at available workshops
-- Optimizes crafting order based on XP/profit
-- Deposits finished items back to bank
-```
-
-#### Characters State Tracking
-
-```typescript
-// Check character status anytime
-pnpm status
-
-// Output:
-// Cartman:  Level 42, HP: 150/150, Location: forest (farming)
-// Stan:     Level 38, HP: 120/150, Location: workshop (crafting)
-// Kyle:     Level 40, HP: 140/150, Location: dungeon (combat)
-// Kenny:    Level 36, HP: 110/120, Location: bank (tasks)
-// Butters:  Level 35, HP: 100/100, Location: bank (central hub)
-```
-
-#### Bank Operations
-
-```typescript
-// Deposit resources to Butters (central bank)
-pnpm bank:deposit
-
-// Withdraw crafting materials for Stan
-pnpm bank:withdraw stan materials
-```
+- **`ArtifactsClient`** (`src/client/index.ts`) — every method (`getCharacter`,
+  `getMaps`, `getItem`, `getResources`, `getMonsters`, `moveCharacter`, `rest`,
+  `gather`, `fight`, `craft`, `equip`, bank deposit/withdraw, gold) returns a
+  `ResultAsync`, never throws.
+- **Rate limiting** — a sliding-window limiter per bucket (`action`, `data`),
+  with a safety margin under the server's documented limits and _paced_
+  requests (never releases a backlog of queued requests all at once - see
+  `src/client/rateLimiter.ts`'s doc comment for why that mattered in
+  practice).
+- **`CharacterAgent`** (`src/bot/characters/characterAgent.ts`) — wraps the
+  client for one character: waits out cooldowns automatically, tracks
+  position/inventory/HP from every action's response (including `fight`,
+  which needed special handling — see git history for why).
+- **World resolution** (`src/bot/world.ts`) — maps a resource/monster/workshop
+  code to a map position, and finds which resource node or monster drops a
+  given item code (item codes and resource/monster codes are distinct).
+- **Farming** (`src/bot/strategies/farming.ts`) — move to a resource, gather
+  until the inventory is full, bank everything.
+- **Hunting** (`src/bot/strategies/hunting.ts` + `src/bot/combat.ts`) — move
+  to a monster, fight repeatedly (resting below 50% HP, logging losses
+  without stopping), bank everything looted.
+- **Craft & equip** (`src/bot/strategies/equipment.ts`) — recursively resolves
+  and gathers/crafts whatever materials are missing (including falling back
+  to hunting when a material is a monster drop rather than a gatherable
+  resource), then equips the result. Skips a slot that's already filled
+  instead of crafting a redundant duplicate, so the same item list can be
+  handed to every character regardless of what they already have equipped.
+- **Inventory-full handling** — both farming and hunting bank everything once
+  full; mid-craft material gathering deposits everything _except_ the item
+  being accumulated so progress isn't lost.
+- **Tasks** (`src/bot/tasks/runTask.ts`) — `farm` and `hunt` loop forever;
+  `craftAndEquip` works through a list of items once. `src/index.ts` assigns
+  one task per character.
+- **Tests** — 60+ Vitest tests (dependency-injected fakes/neverthrow, no real
+  network except `tests/client.test.ts`, which uses MSW for HTTP-contract
+  tests).
 
 ## Scripts
 
 ```bash
 # Development
-pnpm dev          # Run bot with hot reload
-pnpm build        # Compile TypeScript
-pnpm type-check   # Type checking only
+pnpm dev               # Run the bot with hot reload (tsx watch)
+pnpm build             # Compile TypeScript (tsconfig.build.json)
+pnpm start             # Run the compiled build
+pnpm type-check        # Type checking only, no emit
 
-# Utilities
-pnpm status       # Get all characters status
-pnpm inventory    # List all inventories
-pnpm logs         # View bot logs
+# Quality
+pnpm test              # Run all tests once
+pnpm test:watch        # Watch mode
+pnpm test:coverage     # Coverage report
+pnpm lint              # oxlint
+pnpm lint:fix          # oxlint --fix
+pnpm format            # oxfmt
+pnpm format:check      # oxfmt --check
 
-# Operations
-pnpm farm:cartman   # Start Cartman's farming loop
-pnpm craft:stan     # Start Stan's crafting pipeline
-pnpm bank:sync      # Sync bank across all characters
-pnpm fight:kyle     # Start Kyle's combat
+# Codegen
+pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenAPI spec
 ```
 
-## Known Issues & Limitations
+## Known Limitations
 
-- ⚠️ Rate limiting not yet implemented (need to handle Artifacts API cooldowns)
-- ⚠️ Error recovery needs improvement (some crashes on network issues)
-- ⚠️ No persistence layer yet (state resets on restart)
-- ⚠️ No database integration (can't track long-term statistics)
+- **No runtime task control** — assignments are a hardcoded list in
+  `src/index.ts`; reassigning a character means editing that file and
+  restarting `pnpm dev`. A persistent/runtime task queue has been discussed
+  but not built.
+- **Crafting isn't bank-aware** — `craftAndEquip` only checks what's in a
+  character's own inventory, never the bank. If materials are sitting in the
+  bank already, it'll re-gather/re-hunt them instead of withdrawing.
+- **Single-character combat only** — `fight` supports up to 2 additional
+  `participants` for boss monsters (per the API), but nothing in the bot
+  builds multi-character boss fights or raids yet.
+- **No trading** — Grand Exchange buy/sell and NPC trading aren't
+  implemented.
+- **`wooden_stick`** (needed for `wooden_staff`) has no craft recipe and isn't
+  dropped by any resource or monster found so far — likely a quest/starter-only
+  item, deferred indefinitely.
+- **Discord notifications** — `DISCORD_WEBHOOK_URL`/`ENABLE_NOTIFICATIONS`
+  are validated as env vars but nothing sends notifications yet.
 
-## Next Steps
+## Roadmap
 
-1. **Phase 1** — Core stability
-   - [ ] Robust error handling
-   - [ ] State persistence (SQLite or JSON)
-   - [ ] Rate limit management
+This tracks the bot's own capabilities, not what any character happens to be
+doing right now (that's just runtime config in `src/index.ts`).
 
-2. **Phase 2** — Intelligence
-   - [ ] Smart farming routes
-   - [ ] Crafting pipeline optimization
-   - [ ] Trading strategies
+Recently delivered (see git log for details):
 
-3. **Phase 3** — Automation
-   - [ ] Full hands-off operation
-   - [ ] Discord integration
-   - [ ] Web dashboard
+- ✅ Typed API client with `Result`-based error handling, no thrown exceptions
+- ✅ Rate limiting tuned against real 429s (paced requests + safety margin)
+- ✅ Cooldown/position/HP-aware character agent
+- ✅ Farming loop with automatic bank deposits
+- ✅ Craft-and-equip pipeline with recursive material resolution, idempotent
+  re-runs, and inventory-full handling mid-gather
+- ✅ Combat: safe hunting loop (auto-rest, loss-tolerant) and a monster-drop
+  fallback for crafting materials that aren't gatherable resources
 
-4. **Phase 4** — Polish
-   - [ ] Metrics & analytics
-   - [ ] Configuration UI
-   - [ ] Community features (leaderboards, etc)
+Up next (not yet started, roughly in order of likely value):
+
+- [ ] **Automated progression decisions** — right now what to farm/hunt is a
+      hardcoded resource/monster code per character. The goal is a decision layer
+      that looks at a character's current level (and gear) and automatically
+      picks the best available thing to do next, gathering or hunting, without
+      a human choosing the target by hand.
+- [ ] Bank-aware material sourcing (check the bank before re-gathering/hunting)
+- [ ] A lightweight way to reassign tasks without restarting the process
+- [ ] Grand Exchange trading
+- [ ] Multi-character boss fights
+- [ ] Discord notifications for notable events (rare drops, task failures)
 
 ## Debugging
 
@@ -202,30 +209,12 @@ pnpm fight:kyle     # Start Kyle's combat
 LOG_LEVEL=debug pnpm dev
 ```
 
-### Check Character State
+### One-off live checks
 
-```bash
-pnpm status
-
-# or programmatically:
-import { bot } from './src';
-const char = await bot.getCharacter('Stan');
-console.log(char);
-```
-
-### View Recent Logs
-
-```bash
-tail -f logs/bot.log
-```
-
-## Testing
-
-```bash
-pnpm test              # Run all tests
-pnpm test:watch        # Watch mode
-pnpm test:coverage     # Coverage report
-```
+For read-only or low-risk API checks during development, drop a scratch
+script under `scripts/` (prefixed `_`, e.g. `scripts/_checkRates.ts`), run it
+with `pnpm exec tsx --env-file=.env scripts/_checkRates.ts`, then delete it —
+these aren't meant to be committed.
 
 ## Resources
 
@@ -239,17 +228,3 @@ pnpm test:coverage     # Coverage report
 - Not affiliated with Artifacts MMO team
 - Please respect the game's ToS when using automation
 - Ban risk is assumed by the user
-
-## Changelog
-
-### v0.0.1 (Current)
-
-- ✅ Basic character state tracking
-- ✅ API client wrapper
-- ✅ Stan's farming loop (WIP)
-- ✅ Bank deposit/withdraw
-
----
-
-**Last Updated:** 2024
-**Next Sprint:** Implement rate limiting & state persistence
