@@ -10,6 +10,7 @@ type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type Cooldown = components["schemas"]["CooldownSchema"];
 type Item = components["schemas"]["ItemSchema"];
 type Monster = components["schemas"]["MonsterSchema"];
+type Resource = components["schemas"]["ResourceSchema"];
 
 const buildItem = (overrides: Partial<Item>): Item => ({
   ...({} as Item),
@@ -56,6 +57,16 @@ const buildCombatCharacter = (overrides: Partial<CharacterSnapshot> = {}): Chara
     ...overrides,
   });
 
+const buildResource = (overrides: Partial<Resource> = {}): Resource =>
+  ({
+    code: "copper_rocks",
+    drops: [],
+    level: 1,
+    name: "Copper Rocks",
+    skill: "mining",
+    ...overrides,
+  }) as Resource;
+
 const buildMonster = (overrides: Partial<Monster> = {}): Monster =>
   ({
     attack_air: 0,
@@ -87,8 +98,10 @@ const buildFakeClient = (overrides: Partial<ArtifactsClient> = {}): ArtifactsCli
     gather: notImplemented,
     getCharacter: () => okAsync({ data: buildCharacter() }),
     getItem: notImplemented,
+    getItems: notImplemented,
     getMaps: notImplemented,
     getMonsters: notImplemented,
+    getResource: notImplemented,
     getResources: notImplemented,
     moveCharacter: notImplemented,
     rest: notImplemented,
@@ -240,6 +253,48 @@ describe("runTask", () => {
 
       await vi.advanceTimersByTimeAsync(1);
       expect(getMaps).toHaveBeenCalledTimes(2);
+    });
+
+    it("equips the best gathering tool for the resource before starting to farm", async () => {
+      const character = buildCharacter({
+        inventory: [{ code: "copper_pickaxe", quantity: 1, slot: 1 }],
+        level: 1,
+      });
+      const pickaxe = buildItem({
+        code: "copper_pickaxe",
+        effects: [{ code: "mining", description: "", value: -10 }],
+        type: "weapon",
+      });
+      const getResource = vi.fn(() => okAsync({ data: buildResource() }));
+      const getItems = vi.fn(() =>
+        okAsync({ data: [pickaxe], page: 1, pages: 1, size: 100, total: 1 }),
+      );
+      const getItem = vi.fn(() => okAsync({ data: pickaxe }));
+      const equip = vi.fn(() =>
+        okAsync({
+          data: { character, cooldown: buildCooldown("2024-01-01T00:00:03.000Z"), items: [] },
+        }),
+      );
+      const apiError = new ArtifactsApiError("boom", 500, undefined);
+      const getMaps = vi.fn(() => errAsync(apiError));
+      const client = buildFakeClient({
+        equip,
+        getCharacter: () => okAsync({ data: character }),
+        getItem,
+        getItems,
+        getMaps,
+        getResource,
+      });
+
+      void runTask(client, "Cartman", { resource: "copper_rocks", type: "farm" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getResource).toHaveBeenCalledWith("copper_rocks");
+      expect(getItems).toHaveBeenCalledWith({ max_level: 1, size: 100, type: "weapon" });
+      expect(equip).toHaveBeenCalledWith("Cartman", [
+        { code: "copper_pickaxe", quantity: 1, slot: "weapon" },
+      ]);
+      expect(getMaps).toHaveBeenCalledTimes(1);
     });
   });
 
