@@ -62,6 +62,8 @@ pnpm dev
 │   │   │                    # equipment.ts's monster-drop fallback
 │   │   ├── inventory.ts     # Pure helpers over a character's inventory
 │   │   │                    # (held quantity, full-capacity checks, ...)
+│   │   ├── progression.ts   # Automated decision layer (in progress): what
+│   │   │                    # to hunt/farm/craft next, e.g. findNextSafeMonster
 │   │   └── world.ts         # Resolves resource/monster/workshop codes to
 │   │                        # map positions
 │   ├── client/              # Typed, Result-based Artifacts MMO API wrapper,
@@ -238,7 +240,14 @@ pieces:
    - Turn order/initiative is deliberately ignored (documented
      simplification, not an oversight) — revisit only if real fights diverge
      too much from the prediction.
-2. **Task-appropriate equipment ("build per task")** — equip whatever fits
+2. ✅ **`findNextSafeMonster(client, character)`** (`src/bot/progression.ts`)
+   — queries monsters up to the character's level and picks the
+   highest-level one `isSafeToFight` still allows (a stand-in for "most
+   XP/loot" until the real rate estimate in point 4 exists). Returns
+   `undefined` when nothing qualifies, which callers should treat as "go
+   upgrade gear instead" (point 3). Built, unit-tested, not wired into
+   `hunting.ts` or any `Task` yet.
+3. **Task-appropriate equipment ("build per task")** — equip whatever fits
    the activity at hand, not just the highest raw combat stats. E.g.
    `copper_pickaxe`'s -10% mining cooldown matters while mining,
    `copper_axe`'s -10% woodcutting cooldown while woodcutting, and the
@@ -246,12 +255,13 @@ pieces:
    this already exists — `craftAndEquip` is bank-aware, idempotent, and can
    reclaim items from other slots or withdraw them from the bank — so this
    piece is mainly about _choosing_ the right item per activity and
-   triggering the swap, not new low-level capabilities.
-3. **Target selection by XP/loot rate** — among the candidates that pass
-   `isSafeToFight` (or gatherable resources at an appropriate skill level),
-   pick whichever grinds fastest — estimated XP/action and time/action
-   (accounting for cooldowns) — rather than simply "the next one in level
-   order" or "the hardest one that's still safe".
+   triggering the swap, not new low-level capabilities. Also where
+   `findNextSafeMonster` returning `undefined` would plug in: try upgrading
+   gear, then re-run the safety check.
+4. **Target selection by XP/loot rate** — replace `findNextSafeMonster`'s
+   "highest level that's safe" stand-in with a real estimate — XP/action
+   and time/action (accounting for cooldowns) — once there's a reason to
+   believe level alone isn't a good enough proxy.
 
 This will likely replace the fixed resource/monster codes in `farm`/`hunt`
 tasks with periodic re-evaluation (e.g. after every cycle) rather than a
