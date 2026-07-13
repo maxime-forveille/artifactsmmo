@@ -23,6 +23,7 @@ type Dependencies = Pick<
   | "getCharacter"
   | "moveCharacter"
   | "rest"
+  | "unequip"
   | "withdrawGold"
   | "withdrawItems"
 >;
@@ -102,6 +103,7 @@ const defaultDependencies: Dependencies = {
   getCharacter: () => okAsync(buildCharacterResponse()),
   moveCharacter: notImplemented,
   rest: notImplemented,
+  unequip: notImplemented,
   withdrawGold: notImplemented,
   withdrawItems: notImplemented,
 };
@@ -297,6 +299,17 @@ describe("createCharacterAgent", () => {
     expect(equip).toHaveBeenCalledWith("Cartman", [
       { code: "copper_pickaxe", quantity: 1, slot: "weapon" },
     ]);
+    expect(result.isOk()).toBe(true);
+  });
+
+  it("unequip forwards the slot list to the client", async () => {
+    const unequip = vi.fn(() => okAsync(buildEquipResponse("2024-01-01T00:00:05.000Z")));
+    const dependencies: Dependencies = { ...defaultDependencies, unequip };
+
+    const agent = (await createCharacterAgent(dependencies, "Cartman"))._unsafeUnwrap();
+    const result = await agent.unequip([{ quantity: 1, slot: "weapon" }]);
+
+    expect(unequip).toHaveBeenCalledWith("Cartman", [{ quantity: 1, slot: "weapon" }]);
     expect(result.isOk()).toBe(true);
   });
 });

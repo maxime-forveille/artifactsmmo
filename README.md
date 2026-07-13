@@ -117,9 +117,12 @@ ENABLE_NOTIFICATIONS=true
 - **Craft & equip** (`src/bot/strategies/equipment.ts`) — recursively resolves
   and gathers/crafts whatever materials are missing (including falling back
   to hunting when a material is a monster drop rather than a gatherable
-  resource), then equips the result. Skips a slot that's already filled
-  instead of crafting a redundant duplicate, so the same item list can be
-  handed to every character regardless of what they already have equipped.
+  resource), checking the bank first for anything already stored there
+  before gathering/hunting/crafting more. Equipping is idempotent (skips if
+  the exact target item is already in that slot) and replaces whatever else
+  is equipped there otherwise (unequip, then equip) — so the same item list
+  can be handed to every character and it'll upgrade past their starter gear
+  instead of treating it as "already equipped".
 - **Inventory-full handling** — both farming and hunting bank everything once
   full; mid-craft material gathering deposits everything _except_ the item
   being accumulated so progress isn't lost.
@@ -158,9 +161,6 @@ pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenA
   `src/index.ts`; reassigning a character means editing that file and
   restarting `pnpm dev`. A persistent/runtime task queue has been discussed
   but not built.
-- **Crafting isn't bank-aware** — `craftAndEquip` only checks what's in a
-  character's own inventory, never the bank. If materials are sitting in the
-  bank already, it'll re-gather/re-hunt them instead of withdrawing.
 - **Single-character combat only** — `fight` supports up to 2 additional
   `participants` for boss monsters (per the API), but nothing in the bot
   builds multi-character boss fights or raids yet.
@@ -187,6 +187,9 @@ Recently delivered (see git log for details):
   re-runs, and inventory-full handling mid-gather
 - ✅ Combat: safe hunting loop (auto-rest, loss-tolerant) and a monster-drop
   fallback for crafting materials that aren't gatherable resources
+- ✅ Bank-aware material sourcing (checks the bank before re-gathering/hunting)
+- ✅ Equip upgrades replace whatever's already in a slot (unequip + equip)
+  instead of treating starter gear as a permanent placeholder
 
 Up next (not yet started, roughly in order of likely value):
 
@@ -195,7 +198,6 @@ Up next (not yet started, roughly in order of likely value):
       that looks at a character's current level (and gear) and automatically
       picks the best available thing to do next, gathering or hunting, without
       a human choosing the target by hand.
-- [ ] Bank-aware material sourcing (check the bank before re-gathering/hunting)
 - [ ] A lightweight way to reassign tasks without restarting the process
 - [ ] Grand Exchange trading
 - [ ] Multi-character boss fights

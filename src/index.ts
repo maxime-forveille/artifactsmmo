@@ -3,11 +3,11 @@ import { bot } from "./client/index.js";
 import { logger } from "./utils/logger.js";
 
 const ASSIGNMENTS: readonly { readonly character: string; readonly task: Task }[] = [
-  { character: "Cartman", task: { monster: "chicken", type: "hunt" } },
-  { character: "Kyle", task: { monster: "chicken", type: "hunt" } },
-  { character: "Kenny", task: { monster: "chicken", type: "hunt" } },
-  { character: "Stan", task: { monster: "chicken", type: "hunt" } },
-  { character: "Butters", task: { monster: "chicken", type: "hunt" } },
+  { character: "Cartman", task: { items: ["copper_dagger"], type: "craftAndEquip" } },
+  { character: "Kyle", task: { items: ["copper_dagger"], type: "craftAndEquip" } },
+  { character: "Kenny", task: { items: ["copper_dagger"], type: "craftAndEquip" } },
+  { character: "Stan", task: { items: ["copper_dagger"], type: "craftAndEquip" } },
+  { character: "Butters", task: { items: ["copper_dagger"], type: "craftAndEquip" } },
 ];
 
 async function main() {

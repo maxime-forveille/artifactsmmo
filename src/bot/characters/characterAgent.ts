@@ -9,6 +9,7 @@ type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type Destination = components["schemas"]["DestinationSchema"];
 type EquipItem = components["schemas"]["EquipSchema"];
 type SimpleItem = components["schemas"]["SimpleItemSchema"];
+type UnequipItem = components["schemas"]["UnequipSchema"];
 
 type CharacterAgentDependencies = Pick<
   ArtifactsClient,
@@ -21,6 +22,7 @@ type CharacterAgentDependencies = Pick<
   | "getCharacter"
   | "moveCharacter"
   | "rest"
+  | "unequip"
   | "withdrawGold"
   | "withdrawItems"
 >;
@@ -102,6 +104,9 @@ const buildCharacterAgent = (
   const equip = (items: EquipItem[]) =>
     withCooldown("equip", () => client.equip(name, items).map((response) => response.data));
 
+  const unequip = (items: UnequipItem[]) =>
+    withCooldown("unequip", () => client.unequip(name, items).map((response) => response.data));
+
   const fight = (participants?: readonly string[]) =>
     withCooldown("fight", () =>
       client.fight(name, participants).map((response) => {
@@ -143,6 +148,7 @@ const buildCharacterAgent = (
     moveTo,
     name,
     rest,
+    unequip,
     withdrawGold,
     withdrawItems,
   };
