@@ -4,6 +4,7 @@ import { err, ok, ResultAsync } from "neverthrow";
 import { env } from "../utils/config.js";
 import { logger } from "../utils/logger.js";
 import { API_BASE_URL } from "./constants.js";
+import { memoizeAsync } from "./memoize.js";
 import { createRateLimiter, type RateLimitWindow } from "./rateLimiter.js";
 import type { components, paths } from "./schema.js";
 
@@ -143,26 +144,54 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
   const getCharacter = (name: string) =>
     toResult(client.GET("/characters/{name}", { params: { path: { name } } }));
 
-  const getMaps = (query?: paths["/maps"]["get"]["parameters"]["query"]) =>
-    toResult(client.GET("/maps", { params: query === undefined ? {} : { query } }));
+  // These 7 catalog endpoints describe game content (items, monsters,
+  // resources, maps) that never changes for as long as this process runs -
+  // caching them (see `memoizeAsync`) avoids re-fetching the exact same
+  // query every single task cycle, across all 5 characters, which was
+  // eating heavily into the account's hourly GET rate limit for no benefit
+  // (confirmed live: real 429s against the server's own "2000 per 1 hour"
+  // bucket). `getCharacter`, `getCharacterLogs`, and `getBankItems` are
+  // deliberately left uncached below - their data is genuinely dynamic.
+  const cacheKey = (...args: unknown[]): string => JSON.stringify(args);
 
-  const getItem = (code: string) =>
-    toResult(client.GET("/items/{code}", { params: { path: { code } } }));
+  const getMaps = memoizeAsync(
+    (query?: paths["/maps"]["get"]["parameters"]["query"]) =>
+      toResult(client.GET("/maps", { params: query === undefined ? {} : { query } })),
+    cacheKey,
+  );
 
-  const getItems = (query?: paths["/items"]["get"]["parameters"]["query"]) =>
-    toResult(client.GET("/items", { params: query === undefined ? {} : { query } }));
+  const getItem = memoizeAsync(
+    (code: string) => toResult(client.GET("/items/{code}", { params: { path: { code } } })),
+    cacheKey,
+  );
 
-  const getResource = (code: string) =>
-    toResult(client.GET("/resources/{code}", { params: { path: { code } } }));
+  const getItems = memoizeAsync(
+    (query?: paths["/items"]["get"]["parameters"]["query"]) =>
+      toResult(client.GET("/items", { params: query === undefined ? {} : { query } })),
+    cacheKey,
+  );
 
-  const getResources = (query?: paths["/resources"]["get"]["parameters"]["query"]) =>
-    toResult(client.GET("/resources", { params: query === undefined ? {} : { query } }));
+  const getResource = memoizeAsync(
+    (code: string) => toResult(client.GET("/resources/{code}", { params: { path: { code } } })),
+    cacheKey,
+  );
 
-  const getMonster = (code: string) =>
-    toResult(client.GET("/monsters/{code}", { params: { path: { code } } }));
+  const getResources = memoizeAsync(
+    (query?: paths["/resources"]["get"]["parameters"]["query"]) =>
+      toResult(client.GET("/resources", { params: query === undefined ? {} : { query } })),
+    cacheKey,
+  );
 
-  const getMonsters = (query?: paths["/monsters"]["get"]["parameters"]["query"]) =>
-    toResult(client.GET("/monsters", { params: query === undefined ? {} : { query } }));
+  const getMonster = memoizeAsync(
+    (code: string) => toResult(client.GET("/monsters/{code}", { params: { path: { code } } })),
+    cacheKey,
+  );
+
+  const getMonsters = memoizeAsync(
+    (query?: paths["/monsters"]["get"]["parameters"]["query"]) =>
+      toResult(client.GET("/monsters", { params: query === undefined ? {} : { query } })),
+    cacheKey,
+  );
 
   const getBankItems = (query?: paths["/my/bank/items"]["get"]["parameters"]["query"]) =>
     toResult(client.GET("/my/bank/items", { params: query === undefined ? {} : { query } }));

@@ -152,7 +152,21 @@ project source - same treatment as `.env`.
   with a safety margin under the server's documented limits and _paced_
   requests (never releases a backlog of queued requests all at once - see
   `src/client/rateLimiter.ts`'s doc comment for why that mattered in
-  practice).
+  practice). The limiter is in-memory, per process - it forgets what it's
+  already sent across a restart, while the server's own hourly window
+  doesn't (a real contributor to a live 429 during heavy `tsx watch`
+  restart cycles - see "Known Limitations").
+- **Static-catalog caching** (`src/client/memoize.ts`) — `getItems`,
+  `getItem`, `getMonsters`, `getMonster`, `getResources`, `getResource`,
+  and `getMaps` are memoized for the process's lifetime: this game content
+  never changes while the bot runs, so re-fetching the exact same query
+  every task cycle (across all 5 characters, many times an hour with the
+  `autoHunt`/gear-check paths added recently) only ate into the account's
+  hourly GET rate limit for no benefit - confirmed live via real 429s
+  against the server's own "2000 per 1 hour" bucket. `getCharacter`,
+  `getCharacterLogs`, and `getBankItems` are deliberately left uncached -
+  their data is genuinely dynamic. Only successful results are cached; a
+  failed attempt is evicted immediately so the next call retries for real.
 - **`CharacterAgent`** (`src/bot/characters/characterAgent.ts`) — wraps the
   client for one character: waits out cooldowns automatically, tracks
   position/inventory/HP from every action's response (including `fight`,
@@ -247,6 +261,24 @@ pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenA
   take an arbitrarily long time to fetch (no quantity cap either, see
   point 7), and nothing here weighs that against how good the upgrade
   actually is.
+- **Rate limiter forgets history across a process restart** — the
+  sliding-window limiter (`src/client/rateLimiter.ts`) only tracks
+  requests sent by the current process; the server's own hourly window
+  doesn't reset on our restart. In dev, `tsx watch` restarting on every
+  file save means a burst of restarts within the same real hour can
+  cumulatively exceed the server's limit even though no single process
+  lifetime ever saw more than its own local cap - confirmed live. Static-
+  catalog caching (`src/client/memoize.ts`, see "What's implemented")
+  removes most of the *demand* that led to this, but doesn't fix the
+  underlying blind spot; persisting the limiter's state across restarts
+  (ties into the SQLite idea already noted for other reasons) would.
+- **`observedMonsterXpRates` re-fetches 100 log entries every `autoHunt`
+  cycle, per character** — this data is genuinely dynamic (unlike the now-
+  cached catalogs above), so it can't just be memoized forever, but
+  re-fetching a large page on every single cycle - rather than on some
+  looser cadence, since XP/s only meaningfully changes after an actual
+  fight resolves - is still a real, not-yet-addressed contributor to GET
+  volume. Noted here, not fixed yet.
 
 ## Roadmap
 
