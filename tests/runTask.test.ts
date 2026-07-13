@@ -538,5 +538,93 @@ describe("runTask", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(rest).toHaveBeenCalledTimes(1);
     });
+
+    it("only re-checks the weapon slot when the character hasn't leveled up", async () => {
+      const character = buildCombatCharacter({ attack_earth: 20, hp: 1, level: 4, max_hp: 170 });
+      const monster = buildMonster({ code: "chicken", hp: 60, level: 1 });
+      const getMonsters = vi.fn(() =>
+        okAsync({ data: [monster], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      const rest = vi.fn(() =>
+        okAsync({
+          data: {
+            character: buildCombatCharacter({
+              attack_earth: 20,
+              hp: 170,
+              level: 4,
+              max_hp: 170,
+            }),
+            cooldown: buildCooldown("2024-01-01T00:00:03.000Z"),
+            hp_restored: 169,
+          },
+        }),
+      );
+      const getItems = vi.fn((_query?: { type?: string }) =>
+        okAsync({ data: [], page: 1, pages: 1, size: 100, total: 0 }),
+      );
+      const getMaps = vi.fn(() => errAsync(new ArtifactsApiError("boom", 500, undefined)));
+      const client = buildFakeClient({
+        getCharacter: () => okAsync({ data: character }),
+        getItems,
+        getMaps,
+        getMonsters,
+        rest,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const queriedTypes = getItems.mock.calls.map(([query]) => query?.type);
+      expect(queriedTypes).toEqual(["weapon"]);
+    });
+
+    it("checks every combat slot right after the character levels up", async () => {
+      const character = buildCombatCharacter({ attack_earth: 20, hp: 1, level: 4, max_hp: 170 });
+      const monster = buildMonster({ code: "chicken", hp: 60, level: 1 });
+      const getMonsters = vi.fn(() =>
+        okAsync({ data: [monster], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      const rest = vi.fn(() =>
+        okAsync({
+          data: {
+            // Leveled up from resting - a simplification for this test
+            // (in the real game, level-ups come from combat/skill XP, not
+            // resting). What matters here is only that
+            // agent.getCharacter().level increased between checks.
+            character: buildCombatCharacter({
+              attack_earth: 20,
+              hp: 170,
+              level: 5,
+              max_hp: 170,
+            }),
+            cooldown: buildCooldown("2024-01-01T00:00:03.000Z"),
+            hp_restored: 169,
+          },
+        }),
+      );
+      const getItems = vi.fn((_query?: { type?: string }) =>
+        okAsync({ data: [], page: 1, pages: 1, size: 100, total: 0 }),
+      );
+      const getMaps = vi.fn(() => errAsync(new ArtifactsApiError("boom", 500, undefined)));
+      const client = buildFakeClient({
+        getCharacter: () => okAsync({ data: character }),
+        getItems,
+        getMaps,
+        getMonsters,
+        rest,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const sortStrings = (a: string | undefined, b: string | undefined) =>
+        (a ?? "").localeCompare(b ?? "");
+      const queriedTypes = getItems.mock.calls.map(([query]) => query?.type).sort(sortStrings);
+      expect(queriedTypes).toEqual(
+        ["amulet", "body_armor", "boots", "helmet", "leg_armor", "ring", "shield", "weapon"].sort(
+          sortStrings,
+        ),
+      );
+    });
   });
 });

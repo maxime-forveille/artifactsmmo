@@ -213,10 +213,6 @@ pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenA
 
 ## Known Limitations
 
-- **No runtime task control** — assignments are a hardcoded list in
-  `src/index.ts`; reassigning a character means editing that file and
-  restarting `pnpm dev`. A persistent/runtime task queue has been discussed
-  but not built.
 - **Single-character combat only** — `fight` supports up to 2 additional
   `participants` for boss monsters (per the API), but nothing in the bot
   builds multi-character boss fights or raids yet.
@@ -282,6 +278,10 @@ Recently delivered (see git log for details):
   comment for exactly when that check happens (can take up to one full
   cycle). A JSON typo mid-edit is logged and skipped, not fatal - the bot
   keeps running the last-known-good assignments.
+- ✅ Combat gear selection generalized from weapon-only to every combat
+  slot (`findBestCombatGear`, `src/bot/gear.ts`), and `autoHunt` now
+  re-checks all of them right after a character levels up, not just the
+  weapon (see "Automated progression decisions" below)
 
 Up next (not yet started, roughly in order of likely value):
 
@@ -291,12 +291,12 @@ Up next (not yet started, roughly in order of likely value):
 
 ### Automated progression decisions (in design)
 
-Right now what to farm/hunt/craft is a hardcoded resource/monster/item code
-per character in `src/index.ts`, picked and adjusted by hand every time a
-character levels up or finishes a gear upgrade (this happened repeatedly
-while building the bot so far). The goal is a decision layer that picks the
-best next thing to do on its own. Planned in small, independently-testable
-pieces:
+Even with `tasks.json` (no-restart reassignment) and the `auto*` task
+variants below, *which* task type each character runs is still a human
+decision, picked and adjusted by hand every time a character levels up or
+finishes a gear upgrade (this happened repeatedly while building the bot so
+far). The goal is a decision layer that picks the best next thing to do on
+its own. Planned in small, independently-testable pieces:
 
 1. ✅ **`isSafeToFight(character, monster)`** (`src/bot/combat.ts`) — a pure
    heuristic deciding whether a fight is worth attempting, before
@@ -347,19 +347,23 @@ pieces:
      continuous "safety margin" score `isSafeToFight` checks against a
      fixed threshold, now exported so armor's hp/resistances and weapons'
      attack/dmg/crit are ranked on one consistent scale instead of
-     per-slot ad hoc weights). Currently wired into `runHuntTask`/
-     `runAutoHuntTask` for the weapon slot only, same as before the
-     generalization — deciding when/how often to also check the other 7
-     slots is separate and not wired in yet (see below).
+     per-slot ad hoc weights).
+   - `runAutoHuntTask` re-checks the weapon slot every cycle (tied to the
+     current target, which can change every cycle) but only re-checks the
+     other 7 slots right after the character actually levels up - their
+     "best" choice changes far less often, so checking all of them every
+     cycle would mean several extra `getItems`/`getItem` calls for very
+     little benefit most of the time. `runHuntTask` (fixed monster) still
+     only checks the weapon slot, once, at task start.
    - All reuse `craftAndEquip` as-is (bank-aware, idempotent, can reclaim
      items from other slots) — no new low-level capability was needed, just
      the selection logic. Failures are logged and non-fatal: the character
      just keeps whatever's currently equipped.
    - Still open: `findNextSafeMonster` returning `undefined` doesn't yet
-     trigger "try upgrading gear first" — it just retries later. Neither
-     does anything yet decide *when* to spend a cycle checking the other 7
-     slots instead of just hunting/farming - the detection exists
-     (`findBestCombatGear`), the scheduling doesn't.
+     trigger "try upgrading gear first" — it just retries later. `farm`/
+     `autoFarm` don't get a level-up armor check at all (only their
+     gathering tool) - combat gear only matters once a character is
+     actually fighting.
 4. ✅ **Target selection by XP/loot rate** (`src/bot/xpRates.ts`) — replaces
    `findNextSafeMonster`'s "highest level that's safe" stand-in with a real
    estimate, without guessing at a game formula: the API never reveals a

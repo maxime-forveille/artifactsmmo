@@ -5,7 +5,12 @@ import type { components } from "../../client/schema.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
 import { restIfLow } from "../combat.js";
-import { findBestCombatGear, findBestGatheringTool } from "../gear.js";
+import {
+  findBestCombatGear,
+  findBestGatheringTool,
+  SUPPORTED_COMBAT_SLOTS,
+  type SupportedCombatSlot,
+} from "../gear.js";
 import { findNextFarmableResource, findNextSafeMonster, skillLevel } from "../progression.js";
 import { craftAndEquip } from "../strategies/equipment.js";
 import { runFarmingCycle } from "../strategies/farming.js";
@@ -128,31 +133,43 @@ export const runAutoFarmTask = (
   );
 
 /**
- * Equips the best available weapon for fighting `monster` (see
+ * Equips the best available item for `slot` when fighting `monster` (see
  * `findBestCombatGear`), if it differs from what's currently equipped.
  * Same non-blocking failure handling as `equipGatheringToolIfAvailable`.
- * Only the weapon slot for now - `findBestCombatGear` supports every slot
- * in `SUPPORTED_COMBAT_SLOTS`, but deciding when/how often to check the
- * rest (armor, shield, rings, amulet) is a separate piece, not wired in
- * yet.
  */
-const equipCombatWeaponIfAvailable = (
+const equipBestCombatGearIfAvailable = (
+  client: ArtifactsClient,
+  characterName: string,
+  agent: CharacterAgent,
+  monster: Monster,
+  slot: SupportedCombatSlot,
+): ResultAsync<void, never> =>
+  findBestCombatGear(client, agent.getCharacter(), monster, slot, agent.getCharacter().level)
+    .andThen((item) =>
+      item === undefined ? okAsync(undefined) : craftAndEquip(client, agent, item.code),
+    )
+    .orElse((error) => {
+      logger.error(
+        error,
+        `${characterName}: failed to equip best ${slot} gear for ${monster.code}, continuing with current gear`,
+      );
+      return okAsync(undefined);
+    });
+
+/** `equipBestCombatGearIfAvailable` for every slot in `SUPPORTED_COMBAT_SLOTS`, one after another. */
+const equipAllCombatGearIfAvailable = (
   client: ArtifactsClient,
   characterName: string,
   agent: CharacterAgent,
   monster: Monster,
 ): ResultAsync<void, never> =>
-  findBestCombatGear(client, agent.getCharacter(), monster, "weapon", agent.getCharacter().level)
-    .andThen((weapon) =>
-      weapon === undefined ? okAsync(undefined) : craftAndEquip(client, agent, weapon.code),
-    )
-    .orElse((error) => {
-      logger.error(
-        error,
-        `${characterName}: failed to equip a combat weapon for ${monster.code}, continuing with current gear`,
-      );
-      return okAsync(undefined);
-    });
+  SUPPORTED_COMBAT_SLOTS.reduce<ResultAsync<void, never>>(
+    (acc, slot) =>
+      acc.andThen(() =>
+        equipBestCombatGearIfAvailable(client, characterName, agent, monster, slot),
+      ),
+    okAsync(undefined),
+  );
 
 export const runHuntTask = async (
   client: ArtifactsClient,
@@ -164,7 +181,7 @@ export const runHuntTask = async (
   await client
     .getMonster(monsterCode)
     .andThen((response) =>
-      equipCombatWeaponIfAvailable(client, characterName, agent, response.data),
+      equipBestCombatGearIfAvailable(client, characterName, agent, response.data, "weapon"),
     )
     .orElse((error) => {
       logger.error(
@@ -186,10 +203,10 @@ export const runHuntTask = async (
  * Same as a fixed `hunt`, but re-picks the safest, highest-level monster
  * before every cycle instead of using a fixed code (see
  * `findNextSafeMonster`), equipping the best weapon for that monster each
- * time too (see `equipCombatWeaponIfAvailable`) since the target - and so
- * the ideal weapon - can change from one cycle to the next. Rests first,
- * unconditionally, before even looking for a target: `isSafeToFight` can
- * correctly decide nothing is safe to fight at critically low HP, and
+ * time too (see `equipBestCombatGearIfAvailable`) since the target - and
+ * so the ideal weapon - can change from one cycle to the next. Rests
+ * first, unconditionally, before even looking for a target: `isSafeToFight`
+ * can correctly decide nothing is safe to fight at critically low HP, and
  * without this, a character that just barely survived a loss would never
  * get a chance to heal - `restIfLow` only otherwise runs inside the fight
  * loop itself, which this cycle would never reach in that case (regression:
@@ -197,28 +214,48 @@ export const runHuntTask = async (
  * ~1 HP). When nothing is currently safe to fight even after resting,
  * that's treated the same as any other cycle failure: logged and retried
  * shortly.
+ *
+ * The other 7 combat slots (armor, shield, ring, amulet) are only
+ * re-checked right after the character levels up, not every cycle: their
+ * "best" choice changes far less often than the weapon's (which already
+ * tracks the current target every cycle), so checking all of them
+ * constantly would mean several extra `getItems`/`getItem` calls per
+ * cycle for very little benefit most of the time.
  */
 export const runAutoHuntTask = (
   client: ArtifactsClient,
   characterName: string,
   agent: CharacterAgent,
   signal?: AbortSignal,
-): Promise<void> =>
-  runForever(
+): Promise<void> => {
+  let lastGearCheckLevel = agent.getCharacter().level;
+
+  return runForever(
     characterName,
     "auto-hunt cycle",
     () =>
       restIfLow(agent).andThen(() =>
-        findNextSafeMonster(client, agent.getCharacter()).andThen((monster) =>
-          monster === undefined
-            ? errAsync(new NoSafeMonsterFoundError(agent.getCharacter().level))
-            : equipCombatWeaponIfAvailable(client, characterName, agent, monster).andThen(() =>
-                runHuntingCycle(client, agent, monster.code),
-              ),
-        ),
+        findNextSafeMonster(client, agent.getCharacter()).andThen((monster) => {
+          if (monster === undefined) {
+            return errAsync(new NoSafeMonsterFoundError(agent.getCharacter().level));
+          }
+
+          const leveledUp = agent.getCharacter().level > lastGearCheckLevel;
+
+          if (leveledUp) {
+            lastGearCheckLevel = agent.getCharacter().level;
+          }
+
+          const equipGear = leveledUp
+            ? equipAllCombatGearIfAvailable(client, characterName, agent, monster)
+            : equipBestCombatGearIfAvailable(client, characterName, agent, monster, "weapon");
+
+          return equipGear.andThen(() => runHuntingCycle(client, agent, monster.code));
+        }),
       ),
     signal,
   );
+};
 
 /**
  * Crafts and equips each item in `items`, one after another. A failure on
