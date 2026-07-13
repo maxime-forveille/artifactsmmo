@@ -26,7 +26,7 @@ export type DefensiveStats = {
   readonly [K in `res_${Element}`]: number;
 };
 
-type CombatStats = DefensiveStats & OffensiveStats & { readonly hp: number };
+export type CombatStats = DefensiveStats & OffensiveStats & { readonly hp: number };
 
 /**
  * Average damage `attacker` deals to `defender` in one turn: per element,
@@ -51,31 +51,56 @@ export const averageDamagePerTurn = (
 };
 
 /**
- * A rough (not an exact combat simulation) heuristic for whether fighting
- * `monster` is worth attempting: estimates how many turns each side would
- * need to defeat the other from average damage output, and requires the
- * character to win comfortably faster than it would lose - killing in at
- * most half the turns it'd take to die - to leave margin for the variance
- * this model doesn't capture (crit streaks, roll luck, ...). Turn order/
- * initiative is deliberately ignored.
+ * How favorable a fight between `character` and `monster` looks, as a
+ * continuous "safety margin" score (not an exact combat simulation), from
+ * the same turns-to-kill/turns-to-die estimate `isSafeToFight` checks
+ * against a fixed threshold. Higher is better - both more damage output
+ * (fewer turns to kill) and more effective HP/resistance (more turns to
+ * survive) raise it. `0` when the character can't deal any damage at all
+ * (can never win - also the only case where this returns `0`, so `> 0` is
+ * a sound "can this even be attempted" check). When the monster can't
+ * deal any damage back (can never lose), the usual `turnsToDie / turnsToKill`
+ * ratio would be `Infinity` regardless of how much damage the character
+ * deals - collapsing every "perfectly safe" candidate to the same value
+ * and losing the ability to rank them by how fast the fight ends. Dividing
+ * a large finite constant by `turnsToKill` instead keeps the result
+ * comfortably above `isSafeToFight`'s threshold while still favoring
+ * whichever candidate kills faster. Used to *rank* candidates (e.g.
+ * equipment choices) against the same monster, not just answer yes/no
+ * like `isSafeToFight` does.
  */
-export const isSafeToFight = (character: CombatStats, monster: CombatStats): boolean => {
+export const combatMargin = (character: CombatStats, monster: CombatStats): number => {
   const characterDamagePerTurn = averageDamagePerTurn(character, monster);
-  const monsterDamagePerTurn = averageDamagePerTurn(monster, character);
 
   if (characterDamagePerTurn <= 0) {
-    return false;
+    return 0;
   }
+
+  const monsterDamagePerTurn = averageDamagePerTurn(monster, character);
+  const turnsToKill = monster.hp / characterDamagePerTurn;
 
   if (monsterDamagePerTurn <= 0) {
-    return true;
+    return Number.MAX_VALUE / turnsToKill;
   }
 
-  const turnsToKill = monster.hp / characterDamagePerTurn;
   const turnsToDie = character.hp / monsterDamagePerTurn;
 
-  return turnsToKill <= turnsToDie / 2;
+  return turnsToDie / turnsToKill;
 };
+
+// The margin required by isSafeToFight: killing in at most half the turns
+// it'd take to die, to leave room for the variance this model doesn't
+// capture (crit streaks, roll luck, ...).
+const SAFE_MARGIN = 2;
+
+/**
+ * A rough (not an exact combat simulation) heuristic for whether fighting
+ * `monster` is worth attempting: requires the character to win comfortably
+ * faster than it would lose (see `combatMargin`). Turn order/initiative is
+ * deliberately ignored.
+ */
+export const isSafeToFight = (character: CombatStats, monster: CombatStats): boolean =>
+  combatMargin(character, monster) >= SAFE_MARGIN;
 
 // Rest unless HP is strictly above this fraction of max HP. A fight can
 // deal up to roughly this same fraction in damage, so resting only when

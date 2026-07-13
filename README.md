@@ -335,22 +335,31 @@ pieces:
      largest reduction among weapons at or below `maxLevel`. Wired into
      `runFarmTask`, once before its forever loop (the resource, and so the
      needed skill, never changes mid-task).
-   - `findBestCombatWeapon(client, character, monster, maxLevel)` — reuses
-     `combat.ts`'s `averageDamagePerTurn` (now exported): removes the
-     currently-equipped weapon's own contribution from the character's
-     stats, adds each candidate weapon's contribution back in, and picks
-     whichever deals the most estimated damage against that specific
-     monster (weapon effect codes like `attack_<element>`, `dmg`,
-     `dmg_<element>`, `critical_strike` map 1:1 onto the same stat names
-     the damage model already uses). Wired into `runHuntTask` (once, fixed
-     monster) and `runAutoHuntTask` (every cycle, since the target — and so
-     the ideal weapon — can change as the character levels up).
-   - Both reuse `craftAndEquip` as-is (bank-aware, idempotent, can reclaim
+   - `findBestCombatGear(client, character, monster, slot, maxLevel)` —
+     generalizes what used to be weapon-only selection to every equipment
+     slot in `SUPPORTED_COMBAT_SLOTS` (weapon, shield, helmet, body_armor,
+     leg_armor, boots, ring1, amulet — `bag`'s `inventory_space` and
+     `rune`/artifacts/utilities need a different criterion, or aren't
+     handled at all, see `EQUIP_SLOT_BY_ITEM_TYPE`). Removes the
+     currently-equipped item's own contribution from the character's
+     stats, adds each candidate's contribution back in, and picks
+     whichever yields the highest `combatMargin` (`combat.ts` — the same
+     continuous "safety margin" score `isSafeToFight` checks against a
+     fixed threshold, now exported so armor's hp/resistances and weapons'
+     attack/dmg/crit are ranked on one consistent scale instead of
+     per-slot ad hoc weights). Currently wired into `runHuntTask`/
+     `runAutoHuntTask` for the weapon slot only, same as before the
+     generalization — deciding when/how often to also check the other 7
+     slots is separate and not wired in yet (see below).
+   - All reuse `craftAndEquip` as-is (bank-aware, idempotent, can reclaim
      items from other slots) — no new low-level capability was needed, just
      the selection logic. Failures are logged and non-fatal: the character
      just keeps whatever's currently equipped.
    - Still open: `findNextSafeMonster` returning `undefined` doesn't yet
-     trigger "try upgrading gear first" — it just retries later.
+     trigger "try upgrading gear first" — it just retries later. Neither
+     does anything yet decide *when* to spend a cycle checking the other 7
+     slots instead of just hunting/farming - the detection exists
+     (`findBestCombatGear`), the scheduling doesn't.
 4. ✅ **Target selection by XP/loot rate** (`src/bot/xpRates.ts`) — replaces
    `findNextSafeMonster`'s "highest level that's safe" stand-in with a real
    estimate, without guessing at a game formula: the API never reveals a

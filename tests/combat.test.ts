@@ -1,7 +1,7 @@
 import { okAsync } from "neverthrow";
 import { describe, expect, it, vi } from "vitest";
 
-import { fightSafely, isSafeToFight } from "../src/bot/combat.js";
+import { combatMargin, fightSafely, isSafeToFight } from "../src/bot/combat.js";
 import type { components } from "../src/client/schema.js";
 
 type CharacterSnapshot = components["schemas"]["CharacterSchema"];
@@ -118,6 +118,40 @@ describe("isSafeToFight", () => {
 
     expect(isSafeToFight(noBonus, monster)).toBe(false);
     expect(isSafeToFight(withBonus, monster)).toBe(true);
+  });
+});
+
+describe("combatMargin", () => {
+  it("is 0 when the character can't deal any damage", () => {
+    const character = buildStats({ hp: 150 });
+    const monster = buildStats({ attack_earth: 5, hp: 60 });
+
+    expect(combatMargin(character, monster)).toBe(0);
+  });
+
+  it("still discriminates by damage output when the monster can never deal damage back", () => {
+    // Both candidates are "infinitely safe" in the sense that the monster
+    // can never win, but the harder-hitting one should still score higher
+    // instead of both collapsing to the same value - see gear.ts, which
+    // ranks equipment candidates by this score.
+    const monster = buildStats({ hp: 60 });
+    const weakAttacker = buildStats({ attack_earth: 1, hp: 100 });
+    const strongAttacker = buildStats({ attack_earth: 50, hp: 100 });
+
+    expect(combatMargin(strongAttacker, monster)).toBeGreaterThan(
+      combatMargin(weakAttacker, monster),
+    );
+    expect(combatMargin(weakAttacker, monster)).toBeGreaterThan(1_000);
+  });
+
+  it("matches isSafeToFight's threshold at exactly the safety boundary", () => {
+    // Same fixture as isSafeToFight's boundary test: turnsToKill (10) is
+    // exactly half of turnsToDie (20), so the margin is exactly 2.
+    const character = buildStats({ attack_earth: 10, hp: 100 });
+    const monster = buildStats({ attack_earth: 5, hp: 100 });
+
+    expect(combatMargin(character, monster)).toBe(2);
+    expect(isSafeToFight(character, monster)).toBe(true);
   });
 });
 

@@ -5,7 +5,7 @@ import type { components } from "../../client/schema.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
 import { restIfLow } from "../combat.js";
-import { findBestCombatWeapon, findBestGatheringTool } from "../gear.js";
+import { findBestCombatGear, findBestGatheringTool } from "../gear.js";
 import { findNextFarmableResource, findNextSafeMonster, skillLevel } from "../progression.js";
 import { craftAndEquip } from "../strategies/equipment.js";
 import { runFarmingCycle } from "../strategies/farming.js";
@@ -129,8 +129,12 @@ export const runAutoFarmTask = (
 
 /**
  * Equips the best available weapon for fighting `monster` (see
- * `findBestCombatWeapon`), if it differs from what's currently equipped.
+ * `findBestCombatGear`), if it differs from what's currently equipped.
  * Same non-blocking failure handling as `equipGatheringToolIfAvailable`.
+ * Only the weapon slot for now - `findBestCombatGear` supports every slot
+ * in `SUPPORTED_COMBAT_SLOTS`, but deciding when/how often to check the
+ * rest (armor, shield, rings, amulet) is a separate piece, not wired in
+ * yet.
  */
 const equipCombatWeaponIfAvailable = (
   client: ArtifactsClient,
@@ -138,7 +142,7 @@ const equipCombatWeaponIfAvailable = (
   agent: CharacterAgent,
   monster: Monster,
 ): ResultAsync<void, never> =>
-  findBestCombatWeapon(client, agent.getCharacter(), monster, agent.getCharacter().level)
+  findBestCombatGear(client, agent.getCharacter(), monster, "weapon", agent.getCharacter().level)
     .andThen((weapon) =>
       weapon === undefined ? okAsync(undefined) : craftAndEquip(client, agent, weapon.code),
     )

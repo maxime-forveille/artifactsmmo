@@ -5,6 +5,7 @@ import type { components } from "../../client/schema.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
 import { fightSafely } from "../combat.js";
+import { EQUIP_SLOT_BY_ITEM_TYPE, equippedItemInSlot, SLOT_FIELD } from "../gear.js";
 import { heldItems, heldQuantity, isInventoryFull, totalItemCount } from "../inventory.js";
 import {
   BANK_CONTENT_CODE,
@@ -16,7 +17,6 @@ import {
   ResourceNotFoundError,
 } from "../world.js";
 
-type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type EquipSlot = components["schemas"]["ItemSlot"];
 type Item = components["schemas"]["ItemSchema"];
 
@@ -62,43 +62,6 @@ type EquipmentAgent = Pick<
   | "unequip"
   | "withdrawItems"
 >;
-
-// Only the item types produced by the currently craftable level-1 gear.
-// Artifacts/utilities have multiple slots and aren't handled (yet).
-const EQUIP_SLOT_BY_ITEM_TYPE: Partial<Record<string, EquipSlot>> = {
-  amulet: "amulet",
-  bag: "bag",
-  body_armor: "body_armor",
-  boots: "boots",
-  helmet: "helmet",
-  leg_armor: "leg_armor",
-  ring: "ring1",
-  rune: "rune",
-  shield: "shield",
-  weapon: "weapon",
-};
-
-// Only the slots `EQUIP_SLOT_BY_ITEM_TYPE` can produce; the rest of the
-// `EquipSlot` enum (ring2, artifact1-3, utility1-2) is unused here.
-const SLOT_FIELD: Partial<Record<EquipSlot, keyof CharacterSnapshot>> = {
-  amulet: "amulet_slot",
-  bag: "bag_slot",
-  body_armor: "body_armor_slot",
-  boots: "boots_slot",
-  helmet: "helmet_slot",
-  leg_armor: "leg_armor_slot",
-  ring1: "ring1_slot",
-  rune: "rune_slot",
-  shield: "shield_slot",
-  weapon: "weapon_slot",
-};
-
-/** The item code currently held in `slot`, or undefined if it's empty. */
-const equippedItemInSlot = (character: CharacterSnapshot, slot: EquipSlot): string | undefined => {
-  const field = SLOT_FIELD[slot];
-  const value = field === undefined ? undefined : character[field];
-  return typeof value === "string" && value !== "" ? value : undefined;
-};
 
 /**
  * Deposits everything except `itemCode` at the bank. Assumes the character
