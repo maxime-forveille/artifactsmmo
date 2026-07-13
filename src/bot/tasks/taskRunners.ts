@@ -78,6 +78,61 @@ const equipIfFree = (
     });
 
 /**
+ * Equips `item`, gathering/hunting/crafting whatever materials are still
+ * missing along the way (via `craftAndEquip`), as long as every missing
+ * material has a *known* source - a gatherable resource or a monster (see
+ * `materialsNeededFor`'s `source` classification). Skips only when
+ * something needed can't be traced to either at all. Unlike `equipIfFree`,
+ * this commits to however much gathering/hunting the upgrade actually
+ * takes, so it's only used at infrequent checkpoints (right after a
+ * level-up) where paying that cost once in a while is worth it - using it
+ * at a checkpoint that fires every cycle (like the per-target weapon
+ * check) would mean a costly detour far too often.
+ *
+ * Known v1 simplification: doesn't weigh *how much* is missing before
+ * committing (no quantity cap) - a static numeric threshold would be
+ * arbitrary without real data to tune it against yet; see the README's
+ * "Automated progression decisions" for the planned self-tuned-thresholds
+ * follow-up. Failures are logged and swallowed, same as every other
+ * auto-equip path.
+ */
+const equipWorthwhileUpgrade = (
+  client: ArtifactsClient,
+  characterName: string,
+  agent: CharacterAgent,
+  item: Item,
+  context: string,
+): ResultAsync<void, never> =>
+  materialsNeededFor(client, agent.getCharacter(), item.code, 1)
+    .andThen((missing) => {
+      const hasUnknownSource = missing.some((material) => material.source.type === "unknown");
+
+      if (hasUnknownSource) {
+        logger.info(
+          { character: characterName, item: item.code, missing },
+          `${characterName}: found a better ${context} (${item.code}), but part of what it needs can't be traced to any resource/monster - skipping`,
+        );
+        return okAsync(undefined);
+      }
+
+      if (missing.length > 0) {
+        logger.info(
+          { character: characterName, item: item.code, missing },
+          `${characterName}: found a better ${context} (${item.code}), going to gather/craft what's missing`,
+        );
+      }
+
+      return craftAndEquip(client, agent, item.code);
+    })
+    .orElse((error) => {
+      logger.error(
+        error,
+        `${characterName}: failed to check/equip ${item.code} for ${context}, continuing with current gear`,
+      );
+      return okAsync(undefined);
+    });
+
+/**
  * Equips the best available gathering tool for `skill` (see
  * `findBestGatheringTool`), if any exists at the character's level and
  * it's free right now (see `equipIfFree`). A no-op when no such tool is
@@ -176,24 +231,23 @@ export const runAutoFarmTask = (
   );
 
 /**
- * Equips the best available item for `slot` when fighting `monster` (see
- * `findBestCombatGear`), if it differs from what's currently equipped and
- * it's free right now (see `equipIfFree`). Same non-blocking failure
- * handling as `equipGatheringToolIfAvailable`.
+ * Looks up the best item for `slot` when fighting `monster` (see
+ * `findBestCombatGear`), then hands it to `equip` if one was found and it
+ * differs from what's currently equipped - `equip` decides whether/how
+ * aggressively to commit to it (see `equipIfFree` and
+ * `equipWorthwhileUpgrade`). Failures looking up the candidate itself are
+ * logged and swallowed, same as every other auto-equip path.
  */
-const equipBestCombatGearIfAvailable = (
+const withBestCombatGear = (
   client: ArtifactsClient,
   characterName: string,
   agent: CharacterAgent,
   monster: Monster,
   slot: SupportedCombatSlot,
+  equip: (item: Item) => ResultAsync<void, never>,
 ): ResultAsync<void, never> =>
   findBestCombatGear(client, agent.getCharacter(), monster, slot, agent.getCharacter().level)
-    .andThen((item) =>
-      item === undefined
-        ? okAsync(undefined)
-        : equipIfFree(client, characterName, agent, item, `${slot} gear for ${monster.code}`),
-    )
+    .andThen((item) => (item === undefined ? okAsync(undefined) : equip(item)))
     .orElse((error) => {
       logger.error(
         error,
@@ -202,8 +256,50 @@ const equipBestCombatGearIfAvailable = (
       return okAsync(undefined);
     });
 
-/** `equipBestCombatGearIfAvailable` for every slot in `SUPPORTED_COMBAT_SLOTS`, one after another. */
-const equipAllCombatGearIfAvailable = (
+/**
+ * Equips the best available item for `slot` when fighting `monster` if
+ * it's free right now (see `equipIfFree`). Used for checkpoints that fire
+ * every cycle (the current target's weapon), where committing to a costly
+ * detour that often would be too disruptive.
+ */
+const equipBestCombatGearIfAvailable = (
+  client: ArtifactsClient,
+  characterName: string,
+  agent: CharacterAgent,
+  monster: Monster,
+  slot: SupportedCombatSlot,
+): ResultAsync<void, never> =>
+  withBestCombatGear(client, characterName, agent, monster, slot, (item) =>
+    equipIfFree(client, characterName, agent, item, `${slot} gear for ${monster.code}`),
+  );
+
+/**
+ * Equips the best available item for `slot` when fighting `monster` as
+ * long as its materials all have a known source (see
+ * `equipWorthwhileUpgrade`) - a more aggressive commitment than
+ * `equipBestCombatGearIfAvailable`, reserved for infrequent checkpoints
+ * (see `equipAllCombatGearIfWorthwhile`).
+ */
+const equipBestCombatGearIfWorthwhile = (
+  client: ArtifactsClient,
+  characterName: string,
+  agent: CharacterAgent,
+  monster: Monster,
+  slot: SupportedCombatSlot,
+): ResultAsync<void, never> =>
+  withBestCombatGear(client, characterName, agent, monster, slot, (item) =>
+    equipWorthwhileUpgrade(client, characterName, agent, item, `${slot} gear for ${monster.code}`),
+  );
+
+/**
+ * `equipBestCombatGearIfWorthwhile` for every slot in
+ * `SUPPORTED_COMBAT_SLOTS`, one after another - used right after a
+ * level-up, since re-evaluating every slot happens rarely enough that
+ * committing to a worthwhile-but-not-free upgrade along the way is
+ * acceptable (unlike the every-cycle weapon check, see
+ * `equipBestCombatGearIfAvailable`).
+ */
+const equipAllCombatGearIfWorthwhile = (
   client: ArtifactsClient,
   characterName: string,
   agent: CharacterAgent,
@@ -212,7 +308,7 @@ const equipAllCombatGearIfAvailable = (
   SUPPORTED_COMBAT_SLOTS.reduce<ResultAsync<void, never>>(
     (acc, slot) =>
       acc.andThen(() =>
-        equipBestCombatGearIfAvailable(client, characterName, agent, monster, slot),
+        equipBestCombatGearIfWorthwhile(client, characterName, agent, monster, slot),
       ),
     okAsync(undefined),
   );
@@ -266,7 +362,12 @@ export const runHuntTask = async (
  * "best" choice changes far less often than the weapon's (which already
  * tracks the current target every cycle), so checking all of them
  * constantly would mean several extra `getItems`/`getItem` calls per
- * cycle for very little benefit most of the time.
+ * cycle for very little benefit most of the time. That level-up check
+ * (`equipAllCombatGearIfWorthwhile`) also commits to a worthwhile
+ * upgrade even when it isn't completely free, as long as every missing
+ * material has a known source - the every-cycle weapon check
+ * (`equipBestCombatGearIfAvailable`) stays strictly free-only, since
+ * paying a gathering/hunting detour that often would be too disruptive.
  */
 export const runAutoHuntTask = (
   client: ArtifactsClient,
@@ -293,7 +394,7 @@ export const runAutoHuntTask = (
           }
 
           const equipGear = leveledUp
-            ? equipAllCombatGearIfAvailable(client, characterName, agent, monster)
+            ? equipAllCombatGearIfWorthwhile(client, characterName, agent, monster)
             : equipBestCombatGearIfAvailable(client, characterName, agent, monster, "weapon");
 
           return equipGear.andThen(() => runHuntingCycle(client, agent, monster.code));

@@ -290,16 +290,18 @@ Recently delivered (see git log for details):
   (`findCombatGearUpgrades`, `src/bot/gear.ts`) - detect-only counterpart
   to `findBestCombatGear`, scanning every supported slot in parallel (see
   "Automated progression decisions" below)
+- ✅ Cost gate (`equipIfFree`) on the 3 existing auto-equip call sites,
+  using `materialsNeededFor` - only equip an upgrade found automatically
+  when it's completely free right now (see "Automated progression
+  decisions" below)
+- ✅ The level-up 8-slot gear scan now goes to fetch missing materials
+  for a worthwhile-but-not-free upgrade (`equipWorthwhileUpgrade`),
+  instead of just logging it - as long as every missing material has a
+  known source (see "Automated progression decisions" below)
 
 Up next (not yet started, roughly in order of likely value - see point 7
 under "Automated progression decisions" for the full staged plan):
 
-- [ ] Cost gate on the 3 existing auto-equip call sites, using
-  `materialsNeededFor` - only equip an upgrade found automatically when
-  it's completely free right now
-- [ ] `{"type": "auto"}` task assembling `farm`/`hunt`/`craftAndEquip`
-  within a human-chosen activity family, including going to fetch
-  materials for a worthwhile-but-not-free upgrade
 - [ ] Craft as its own profession activity (bank-surplus detection)
 - [ ] Grand Exchange trading
 - [ ] Multi-character boss fights
@@ -493,30 +495,45 @@ the bigger, still-open piece of "automated progression decisions".
    both gaps done, a dedicated design session settled the shape of the
    remaining work, deliberately staged from immediate to long-term
    rather than building the full policy in one pass:
-   - ⚡ **Immediate - a cost gate on the 3 existing auto-equip call
-     sites.** `equipBestCombatGearIfAvailable`, `equipAllCombatGearIfAvailable`,
-     and `equipGatheringToolIfAvailable` (`taskRunners.ts`) all call
-     `craftAndEquip` today for *any* upgrade they find, with no limit on
-     how much gathering/hunting that commits the character to - this is
-     live behavior, not hypothetical. Gate every one of them on
+   - ✅ **Immediate - a cost gate on the 3 existing auto-equip call
+     sites.** `equipBestCombatGearIfAvailable` (weapon, every cycle),
+     `equipAllCombatGearIfAvailable` (8 slots, on level-up), and
+     `equipGatheringToolIfAvailable` (gathering tool, at farm/autoFarm
+     start) all called `craftAndEquip` for *any* upgrade they found, with
+     no limit on how much gathering/hunting that committed the character
+     to - this was live behavior, not hypothetical. All three now gate on
      `materialsNeededFor` returning `[]` (the upgrade is completely free
-     right now, counting inventory and bank) before calling
-     `craftAndEquip`; otherwise log the upgrade and its cost for
-     visibility, and keep whatever's currently equipped. Strictly more
-     conservative than the current behavior - a free upgrade is still
-     equipped immediately, a costly one is deferred instead of committed
-     to blindly. No new task type, no new plumbing - this only wires
-     together what Gap A/B already provide.
-   - 🕒 **Near-term - build these soon:**
-     - A new `{"type": "auto"}` `Task` (the seed of `decideActivity()`)
-       that assembles `farm`/`hunt`/`craftAndEquip` *within the activity
-       family a human already picked* in `tasks.json` (still not
-       deciding hunt-vs-farm itself yet). This is where a
-       not-free-but-worthwhile upgrade gets a real answer instead of
-       just being logged: go fetch the missing materials (`craftAndEquip`
-       already crosses farm/hunt/bank for a single bounded material need
-       via `ensureHeldItem` - this is deterministic plumbing, not a value
-       judgment, and already runs live today) and resume afterward.
+     right now, counting inventory and bank) via a new `equipIfFree`
+     helper before calling `craftAndEquip`; otherwise the upgrade and its
+     cost are logged for visibility, and whatever's currently equipped is
+     kept. Strictly more conservative than the previous behavior - a free
+     upgrade is still equipped immediately, a costly one is deferred
+     instead of committed to blindly.
+   - ✅ **Near-term - go fetch materials for a worthwhile-but-not-free
+     upgrade, instead of just logging it.** Originally planned as a new
+     `{"type": "auto"}` `Task`, but implemented as a smaller, equivalent
+     extension once it turned out the actual need only ever fires at one
+     already-infrequent checkpoint: right after a level-up, the full
+     8-slot gear scan (`equipAllCombatGearIfAvailable` in
+     `runAutoHuntTask`) now uses a new `equipWorthwhileUpgrade` gate
+     instead of the strict free-only one - it commits to `craftAndEquip`
+     as long as every missing material has a *known* source (a
+     gatherable resource or a monster, per `materialsNeededFor`'s
+     `source` field), skipping only when something can't be traced to
+     either at all. `craftAndEquip`/`ensureHeldItem` already cross
+     farm/hunt/bank for a single bounded material need - this is
+     deterministic plumbing, not a value judgment - so no interruption/
+     resume machinery was needed: the existing sequential `await` chain
+     already pauses the hunting loop for exactly as long as fetching
+     takes, then continues on its own. The every-cycle weapon check
+     (`equipBestCombatGearIfAvailable`) deliberately keeps the strict
+     free-only gate (`equipIfFree`) - paying a gathering/hunting detour
+     that often would be too disruptive; only the rare, once-per-level
+     checkpoint affords a costlier commitment. Known v1 simplification:
+     no cap on *how much* is missing before committing (no quantity
+     threshold yet) - see the self-tuned-thresholds item below for why a
+     static number wasn't invented here.
+   - 🕒 **Near-term - build this soon:**
      - Craft as its own profession activity, not just a means to a combat
        upgrade: detect a bank surplus worth transforming (profession XP
        gained + decluttering), the mirror image of `materialsNeededFor`

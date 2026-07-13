@@ -9,6 +9,7 @@ import type { components } from "../src/client/schema.js";
 type CharacterSnapshot = components["schemas"]["CharacterSchema"];
 type Cooldown = components["schemas"]["CooldownSchema"];
 type Item = components["schemas"]["ItemSchema"];
+type MapSchema = components["schemas"]["MapSchema"];
 type Monster = components["schemas"]["MonsterSchema"];
 type Resource = components["schemas"]["ResourceSchema"];
 
@@ -709,6 +710,211 @@ describe("runTask", () => {
           sortStrings,
         ),
       );
+    });
+
+    it("equips a worthwhile upgrade at level-up even when it needs gathering first, as long as its material has a known source", async () => {
+      const held = new Map<string, number>();
+      const buildLeveledCharacter = (): CharacterSnapshot =>
+        buildCombatCharacter({
+          attack_earth: 20,
+          hp: 170,
+          inventory: [...held.entries()].map(([code, quantity], index) => ({
+            code,
+            quantity,
+            slot: index,
+          })),
+          level: 5,
+          map_id: 1,
+          max_hp: 170,
+          weapon_slot: "",
+        });
+      const monster = buildMonster({ code: "chicken", hp: 60, level: 1 });
+      const newWeapon = buildItem({
+        code: "new_weapon",
+        effects: [{ code: "attack_earth", description: "", value: 30 }],
+        type: "weapon",
+      });
+      const newWeaponResource = buildResource({ code: "new_weapon_node" });
+      const getMonsters = vi.fn(() =>
+        okAsync({ data: [monster], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      // Every mocked action's cooldown expires exactly at (not after) the
+      // frozen fake "now" below, so withCooldown's wait resolves
+      // immediately for each of the several sequential agent actions this
+      // test's full gather-then-equip pipeline needs (move, gather, equip)
+      // - unlike other tests here, which only ever reach a single action.
+      const rest = vi.fn(() =>
+        okAsync({
+          data: {
+            character: buildLeveledCharacter(),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            hp_restored: 169,
+          },
+        }),
+      );
+      const getItems = vi.fn((query?: { type?: string }) =>
+        okAsync({
+          data: query?.type === "weapon" ? [newWeapon] : [],
+          page: 1,
+          pages: 1,
+          size: 100,
+          total: query?.type === "weapon" ? 1 : 0,
+        }),
+      );
+      const getItem = vi.fn(() => okAsync({ data: newWeapon }));
+      const getBankItems = vi.fn(() =>
+        okAsync({ data: [], page: 1, pages: 1, size: 50, total: 0 }),
+      );
+      const getResources = vi.fn(() =>
+        okAsync({ data: [newWeaponResource], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      const getMaps = vi.fn((query?: { content_type?: string }) =>
+        okAsync({
+          data: [
+            { ...({} as MapSchema), map_id: query?.content_type === "monster" ? 1 : 2 },
+          ],
+          page: 1,
+          pages: 1,
+          size: 50,
+          total: 1,
+        }),
+      );
+      const moveCharacter = vi.fn(() =>
+        okAsync({
+          data: {
+            character: buildLeveledCharacter(),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            destination: { ...({} as MapSchema), map_id: 2 },
+            path: [],
+          },
+        }),
+      );
+      const gather = vi.fn(() => {
+        held.set("new_weapon", (held.get("new_weapon") ?? 0) + 1);
+        return okAsync({
+          data: {
+            character: buildLeveledCharacter(),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            details: { items: [], xp: 1 },
+          },
+        });
+      });
+      const equip = vi.fn(() =>
+        okAsync({
+          data: {
+            character: buildLeveledCharacter(),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            items: [],
+          },
+        }),
+      );
+      const client = buildFakeClient({
+        equip,
+        gather,
+        getBankItems,
+        getCharacter: () =>
+          okAsync({
+            data: buildCombatCharacter({
+              attack_earth: 20,
+              hp: 1,
+              level: 4,
+              map_id: 1,
+              max_hp: 170,
+              weapon_slot: "",
+            }),
+          }),
+        getItem,
+        getItems,
+        getMaps,
+        getMonsters,
+        getResources,
+        moveCharacter,
+        rest,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(equip).toHaveBeenCalledWith("Cartman", [
+        { code: "new_weapon", quantity: 1, slot: "weapon" },
+      ]);
+    });
+
+    it("does not equip a worthwhile-looking upgrade at level-up when its material can't be traced to any resource/monster", async () => {
+      const character = buildCombatCharacter({
+        attack_earth: 20,
+        hp: 1,
+        level: 4,
+        map_id: 1,
+        max_hp: 170,
+        weapon_slot: "",
+      });
+      const monster = buildMonster({ code: "chicken", hp: 60, level: 1 });
+      const newWeapon = buildItem({
+        code: "new_weapon",
+        effects: [{ code: "attack_earth", description: "", value: 30 }],
+        type: "weapon",
+      });
+      const getMonsters = vi.fn((query?: { drop?: string }) =>
+        okAsync({
+          data: query?.drop === undefined ? [monster] : [],
+          page: 1,
+          pages: 1,
+          size: 50,
+          total: query?.drop === undefined ? 1 : 0,
+        }),
+      );
+      const rest = vi.fn(() =>
+        okAsync({
+          data: {
+            character: buildCombatCharacter({
+              attack_earth: 20,
+              hp: 170,
+              level: 5,
+              map_id: 1,
+              max_hp: 170,
+              weapon_slot: "",
+            }),
+            cooldown: buildCooldown("2024-01-01T00:00:03.000Z"),
+            hp_restored: 169,
+          },
+        }),
+      );
+      const getItems = vi.fn((query?: { type?: string }) =>
+        okAsync({
+          data: query?.type === "weapon" ? [newWeapon] : [],
+          page: 1,
+          pages: 1,
+          size: 100,
+          total: query?.type === "weapon" ? 1 : 0,
+        }),
+      );
+      const getItem = vi.fn(() => okAsync({ data: newWeapon }));
+      const getBankItems = vi.fn(() =>
+        okAsync({ data: [], page: 1, pages: 1, size: 50, total: 0 }),
+      );
+      const getResources = vi.fn(() =>
+        okAsync({ data: [], page: 1, pages: 1, size: 50, total: 0 }),
+      );
+      const equip = vi.fn();
+      const getMaps = vi.fn(() => errAsync(new ArtifactsApiError("boom", 500, undefined)));
+      const client = buildFakeClient({
+        equip,
+        getBankItems,
+        getCharacter: () => okAsync({ data: character }),
+        getItem,
+        getItems,
+        getMaps,
+        getMonsters,
+        getResources,
+        rest,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getBankItems).toHaveBeenCalledWith({ item_code: "new_weapon" });
+      expect(equip).not.toHaveBeenCalled();
     });
   });
 });
