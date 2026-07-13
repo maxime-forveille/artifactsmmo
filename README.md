@@ -220,6 +220,26 @@ pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenA
   implemented.
 - **Discord notifications** — `DISCORD_WEBHOOK_URL`/`ENABLE_NOTIFICATIONS`
   are validated as env vars but nothing sends notifications yet.
+- **No crafting-skill-level check before attempting a craft** — every
+  gear-upgrade path (`findBestCombatGear`/`findBestGatheringTool` via
+  `character.level`, and `materialsNeededFor`/`ensureHeldItem`'s
+  recursion into `item.craft`) only ever checks the item's equip-level
+  against the character's overall `level`, never the character's actual
+  crafting-skill level (`weaponcrafting_level`, `gearcrafting_level`,
+  `jewelrycrafting_level`, ...) against `item.craft.level`. If an
+  upgrade needs a craft the character's skill isn't leveled enough for
+  yet, the pipeline still tries to gather the materials and calls
+  `craft` anyway - the resulting API error is caught and logged
+  non-fatally like any other failure (nothing breaks), but it's a
+  wasted attempt rather than a decision made ahead of time. Properly
+  fixing this needs more than a filter: the eventual answer isn't just
+  "skip this upgrade", it's "go level up that profession first" - which
+  needs the cross-character orchestrator (see "Cross-character
+  orchestration" below) to be able to temporarily send a character into
+  a farming/crafting-practice loop for the right skill, then come back
+  to the upgrade once it's unlocked. Deliberately left as a known gap
+  until that orchestration foundation exists, rather than bolting on a
+  narrower fix now.
 
 ## Roadmap
 
