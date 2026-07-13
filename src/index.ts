@@ -1,4 +1,5 @@
-import { type Task, runTask } from "./bot/tasks/runTask.js";
+import type { Task } from "./bot/tasks/task.js";
+import { runTask } from "./bot/tasks/runTask.js";
 import { bot } from "./client/index.js";
 import { logger } from "./utils/logger.js";
 
