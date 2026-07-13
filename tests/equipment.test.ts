@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   craftAndEquip,
+  InsufficientCraftingLevelError,
   UnsafeMonsterError,
   UnsupportedEquipSlotError,
 } from "../src/bot/strategies/equipment.js";
@@ -923,6 +924,66 @@ describe("craftAndEquip", () => {
     expect(result.isErr() && result.error).toBeInstanceOf(UnsafeMonsterError);
     expect(moveTo).not.toHaveBeenCalled();
     expect(fight).not.toHaveBeenCalled();
+  });
+
+  it("refuses to craft an item the character's profession level isn't high enough for yet", async () => {
+    const character = {
+      ...({} as CharacterSnapshot),
+      inventory: [],
+      inventory_max_items: 100,
+      name: "Cartman",
+      weaponcrafting_level: 1,
+    } as CharacterSnapshot;
+
+    const getItem = vi.fn((code: string) =>
+      code === "apprentice_gloves"
+        ? okAsync({
+            data: buildItem({
+              code: "apprentice_gloves",
+              craft: {
+                items: [{ code: "feather", quantity: 3 }],
+                level: 5,
+                quantity: 1,
+                skill: "weaponcrafting",
+              },
+              type: "weapon",
+            }),
+          } satisfies ItemResponse)
+        : okAsync({ data: buildItem({ code }) } satisfies ItemResponse),
+    );
+    const getResources = vi.fn();
+    const getMonsters = vi.fn();
+    const gather = vi.fn();
+    const craft = vi.fn();
+
+    const result = await craftAndEquip(
+      {
+        getBankItems: buildEmptyGetBankItems(),
+        getItem,
+        getMaps: vi.fn(),
+        getMonsters,
+        getResources,
+      },
+      {
+        craft,
+        depositItems: vi.fn(),
+        equip: vi.fn(),
+        fight: vi.fn(),
+        gather,
+        getCharacter: () => character,
+        moveTo: vi.fn(),
+        rest: vi.fn(),
+        unequip: vi.fn(),
+        withdrawItems: vi.fn(),
+      },
+      "apprentice_gloves",
+    );
+
+    expect(result.isErr() && result.error).toBeInstanceOf(InsufficientCraftingLevelError);
+    expect(getResources).not.toHaveBeenCalled();
+    expect(getMonsters).not.toHaveBeenCalled();
+    expect(gather).not.toHaveBeenCalled();
+    expect(craft).not.toHaveBeenCalled();
   });
 
   it("propagates a MonsterNotFoundError when a raw material can't be gathered or hunted", async () => {

@@ -6,6 +6,7 @@ import { isSafeToFight } from "./combat.js";
 import { type ObservedMonsterRates, observedMonsterXpRatesOrEmpty } from "./xpRates.js";
 
 type Character = components["schemas"]["CharacterSchema"];
+type CraftSkill = components["schemas"]["CraftSkill"];
 type GatheringSkill = components["schemas"]["GatheringSkill"];
 type Monster = components["schemas"]["MonsterSchema"];
 type Resource = components["schemas"]["ResourceSchema"];
@@ -31,6 +32,37 @@ export const skillLevel = (character: Character, skill: GatheringSkill): number 
     default: {
       const exhaustiveCheck: never = skill;
       throw new Error(`Unhandled gathering skill: ${JSON.stringify(exhaustiveCheck)}`);
+    }
+  }
+};
+
+/** `character`'s level in the crafting profession `skill` (e.g. `weaponcrafting_level` for `"weaponcrafting"`). */
+export const craftSkillLevel = (character: Character, skill: CraftSkill): number => {
+  switch (skill) {
+    case "alchemy": {
+      return character.alchemy_level;
+    }
+    case "cooking": {
+      return character.cooking_level;
+    }
+    case "gearcrafting": {
+      return character.gearcrafting_level;
+    }
+    case "jewelrycrafting": {
+      return character.jewelrycrafting_level;
+    }
+    case "mining": {
+      return character.mining_level;
+    }
+    case "weaponcrafting": {
+      return character.weaponcrafting_level;
+    }
+    case "woodcutting": {
+      return character.woodcutting_level;
+    }
+    default: {
+      const exhaustiveCheck: never = skill;
+      throw new Error(`Unhandled craft skill: ${JSON.stringify(exhaustiveCheck)}`);
     }
   }
 };

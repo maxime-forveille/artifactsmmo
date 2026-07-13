@@ -2,6 +2,7 @@ import { errAsync, okAsync } from "neverthrow";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  craftSkillLevel,
   findNextFarmableResource,
   findNextSafeMonster,
   skillLevel,
@@ -223,6 +224,28 @@ describe("skillLevel", () => {
     expect(skillLevel(character, "woodcutting")).toBe(5);
     expect(skillLevel(character, "fishing")).toBe(2);
     expect(skillLevel(character, "alchemy")).toBe(3);
+  });
+});
+
+describe("craftSkillLevel", () => {
+  it("reads the character field matching each crafting profession", () => {
+    const character = buildCharacter({
+      alchemy_level: 3,
+      cooking_level: 4,
+      gearcrafting_level: 6,
+      jewelrycrafting_level: 7,
+      mining_level: 8,
+      weaponcrafting_level: 1,
+      woodcutting_level: 5,
+    });
+
+    expect(craftSkillLevel(character, "weaponcrafting")).toBe(1);
+    expect(craftSkillLevel(character, "gearcrafting")).toBe(6);
+    expect(craftSkillLevel(character, "jewelrycrafting")).toBe(7);
+    expect(craftSkillLevel(character, "cooking")).toBe(4);
+    expect(craftSkillLevel(character, "woodcutting")).toBe(5);
+    expect(craftSkillLevel(character, "mining")).toBe(8);
+    expect(craftSkillLevel(character, "alchemy")).toBe(3);
   });
 });
 

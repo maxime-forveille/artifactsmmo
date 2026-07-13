@@ -220,26 +220,33 @@ pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenA
   implemented.
 - **Discord notifications** — `DISCORD_WEBHOOK_URL`/`ENABLE_NOTIFICATIONS`
   are validated as env vars but nothing sends notifications yet.
-- **No crafting-skill-level check before attempting a craft** — every
-  gear-upgrade path (`findBestCombatGear`/`findBestGatheringTool` via
-  `character.level`, and `materialsNeededFor`/`ensureHeldItem`'s
-  recursion into `item.craft`) only ever checks the item's equip-level
-  against the character's overall `level`, never the character's actual
-  crafting-skill level (`weaponcrafting_level`, `gearcrafting_level`,
-  `jewelrycrafting_level`, ...) against `item.craft.level`. If an
-  upgrade needs a craft the character's skill isn't leveled enough for
-  yet, the pipeline still tries to gather the materials and calls
-  `craft` anyway - the resulting API error is caught and logged
-  non-fatally like any other failure (nothing breaks), but it's a
-  wasted attempt rather than a decision made ahead of time. Properly
-  fixing this needs more than a filter: the eventual answer isn't just
-  "skip this upgrade", it's "go level up that profession first" - which
-  needs the cross-character orchestrator (see "Cross-character
-  orchestration" below) to be able to temporarily send a character into
-  a farming/crafting-practice loop for the right skill, then come back
-  to the upgrade once it's unlocked. Deliberately left as a known gap
-  until that orchestration foundation exists, rather than bolting on a
-  narrower fix now.
+- **No automatic "go level up that profession" follow-up when a craft's
+  skill level isn't met yet** — `ensureHeldItem` (`strategies/equipment.ts`)
+  now checks the character's actual crafting-skill level
+  (`weaponcrafting_level`, `gearcrafting_level`, `jewelrycrafting_level`,
+  ..., via `craftSkillLevel` in `progression.ts`) against `item.craft.level`
+  *before* gathering a single material, failing fast with a dedicated
+  `InsufficientCraftingLevelError` instead of wasting a real `craft` API
+  call that was always going to fail. What's still missing is the
+  follow-up: the eventual answer isn't just "skip this upgrade", it's
+  "go level up that profession first" - which needs the cross-character
+  orchestrator (see "Cross-character orchestration" below) to be able to
+  temporarily send a character into a farming/crafting-practice loop for
+  the right skill, then come back to the upgrade once it's unlocked.
+  Deliberately left as a known gap until that orchestration foundation
+  exists.
+- **No cost/risk weighing for a "known" material source, only
+  exists/doesn't** — `materialsNeededFor`'s `source` classification (see
+  "Automated progression decisions" below) only ever says a raw material
+  is gatherable, huntable, or unknown - never *how* risky or expensive
+  going to get it actually is. `UnsafeMonsterError` (a monster drop that
+  isn't safe to fight, added after a live incident - see "Automated
+  progression decisions" point 7) and `InsufficientCraftingLevelError`
+  (above) both cover a *binary* safety/eligibility check, not a
+  cost/value judgment - a known-safe, known-eligible source can still
+  take an arbitrarily long time to fetch (no quantity cap either, see
+  point 7), and nothing here weighs that against how good the upgrade
+  actually is.
 
 ## Roadmap
 
@@ -320,10 +327,10 @@ Recently delivered (see git log for details):
   known source (see "Automated progression decisions" below)
 - ✅ Read-only "what could I craft right now from bank surplus" query
   (`findCraftableFromBankSurplus`, `src/bot/materialPlan.ts`) - the
-  mirror image of `materialsNeededFor`, and the first gear-upgrade-
-  adjacent path in the codebase to actually check a crafting-skill
-  level, not just the character's overall level (see "Automated
-  progression decisions" and "Known Limitations" below)
+  mirror image of `materialsNeededFor`, checking a crafting-skill level
+  (`craftSkillLevel`, `src/bot/progression.ts`) rather than just the
+  character's overall level (see "Automated progression decisions" and
+  "Known Limitations" below)
 - 🐛 Fixed live: the level-up 8-slot gear scan now also runs on an
   `autoHunt` task's very first cycle, not only after a level transition -
   a character already at their current level when the task started (a
@@ -343,6 +350,16 @@ Recently delivered (see git log for details):
   listed in a `craftAndEquip` task), which exposed the gap - two
   characters were repeatedly losing fights against monsters well above
   what their gear could handle, chasing amulet/armor materials.
+- ✅ `ensureHeldItem` (`strategies/equipment.ts`) now checks the
+  character's crafting-skill level against a recipe's `craft.level`
+  requirement (`craftSkillLevel`, `src/bot/progression.ts`) before
+  gathering a single material for it, failing fast with a new
+  `InsufficientCraftingLevelError` instead of wasting a `craft` API call
+  that was always going to fail - added proactively right after the
+  `UnsafeMonsterError` fix above, once the same "known source, but not
+  actually usable yet" shape was spotted (see "Known Limitations" for
+  what's still open: this only skips the upgrade, it doesn't yet go
+  level up the profession).
 
 Up next (not yet started, roughly in order of likely value - see point 7
 under "Automated progression decisions" for the full staged plan):
@@ -591,7 +608,14 @@ the bigger, still-open piece of "automated progression decisions".
      `craftAndEquip`/`ensureHeldItem` fallback still has no notion of
      "this source exists but isn't worth (or safe) pursuing", only
      "exists" vs "unknown"; `UnsafeMonsterError` covers the safety half of
-     that gap for now, not the cost half.
+     that gap for now, not the cost half. The same pipeline also now
+     checks the character's crafting-skill level against `item.craft.level`
+     before gathering a single material for it (`InsufficientCraftingLevelError`),
+     failing fast instead of wasting a `craft` call that was always going
+     to fail - added proactively once the same "known source, but not
+     actually usable yet" shape was spotted, right after the safety fix.
+     See "Known Limitations" for what's still missing here: the check
+     stops at "skip it", it doesn't yet go level up the profession first.
    - ✅ **Near-term - sensing for craft-as-a-profession (detection only,
      not wired into any task yet).** `findCraftableFromBankSurplus`
      (`src/bot/materialPlan.ts`) is the mirror image of

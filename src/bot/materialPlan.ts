@@ -3,6 +3,7 @@ import { errAsync, okAsync, type ResultAsync } from "neverthrow";
 import type { ArtifactsApiError, ArtifactsClient } from "../client/index.js";
 import type { components } from "../client/schema.js";
 import { heldQuantity } from "./inventory.js";
+import { craftSkillLevel } from "./progression.js";
 import {
   findMonsterForDrop,
   findResourceForDrop,
@@ -19,20 +20,6 @@ type MaterialPlanClient = Pick<
   "getBankItems" | "getItem" | "getMonsters" | "getResources"
 >;
 type CraftableFromSurplusClient = Pick<ArtifactsClient, "getBankItems" | "getItems">;
-
-const PROFESSION_LEVEL_FIELD: Record<CraftSkill, keyof Character> = {
-  alchemy: "alchemy_level",
-  cooking: "cooking_level",
-  gearcrafting: "gearcrafting_level",
-  jewelrycrafting: "jewelrycrafting_level",
-  mining: "mining_level",
-  weaponcrafting: "weaponcrafting_level",
-  woodcutting: "woodcutting_level",
-};
-
-/** `character`'s level in the crafting profession `skill` (e.g. `weaponcrafting_level` for `"weaponcrafting"`). */
-const professionLevel = (character: Character, skill: CraftSkill): number =>
-  character[PROFESSION_LEVEL_FIELD[skill]] as number;
 
 /** Where a still-missing raw material could come from, if anywhere known. */
 export type MaterialSource =
@@ -226,11 +213,9 @@ const craftableQuantityFor = (
  * what's piling up" instead of "what's missing to make this"). Only
  * considers items whose crafting-skill level requirement
  * (`item.craft.level`) the character's own profession level already
- * meets (`professionLevel`) - a candidate here is something the character
- * could actually attempt right now, not just something they could
- * theoretically hold the materials for (see the README's "Known
- * Limitations" for why that distinction matters: nothing else in this
- * codebase checks profession level before attempting a craft).
+ * meets (`craftSkillLevel`, `progression.ts`) - a candidate here is
+ * something the character could actually attempt right now, not just
+ * something they could theoretically hold the materials for.
  *
  * Starts from the bank's own contents (`getBankItems`, first page only -
  * a bank with more than one page of distinct item codes won't have all of
@@ -269,7 +254,7 @@ export const findCraftableFromBankSurplus = (
             (candidate): candidate is { item: Item; level: number; skill: CraftSkill } =>
               candidate.skill !== undefined &&
               candidate.level !== undefined &&
-              candidate.level <= professionLevel(character, candidate.skill),
+              candidate.level <= craftSkillLevel(character, candidate.skill),
           );
 
         return eligible.reduce<ResultAsync<readonly CraftableFromSurplus[], ArtifactsApiError>>(

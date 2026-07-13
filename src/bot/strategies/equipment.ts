@@ -7,6 +7,7 @@ import type { CharacterAgent } from "../characters/characterAgent.js";
 import { fightSafely, isSafeToFight } from "../combat.js";
 import { EQUIP_SLOT_BY_ITEM_TYPE, equippedItemInSlot, SLOT_FIELD } from "../gear.js";
 import { heldItems, heldQuantity, isInventoryFull, totalItemCount } from "../inventory.js";
+import { craftSkillLevel } from "../progression.js";
 import {
   BANK_CONTENT_CODE,
   findMonsterForDrop,
@@ -17,6 +18,7 @@ import {
   ResourceNotFoundError,
 } from "../world.js";
 
+type CraftSkill = components["schemas"]["CraftSkill"];
 type EquipSlot = components["schemas"]["ItemSlot"];
 type Item = components["schemas"]["ItemSchema"];
 
@@ -49,8 +51,23 @@ export class UnsafeMonsterError extends Error {
   }
 }
 
+export class InsufficientCraftingLevelError extends Error {
+  constructor(
+    public readonly itemCode: string,
+    public readonly skill: CraftSkill,
+    public readonly requiredLevel: number,
+    public readonly currentLevel: number,
+  ) {
+    super(
+      `Crafting "${itemCode}" needs ${skill} level ${requiredLevel}, but the character is only level ${currentLevel}`,
+    );
+    this.name = "InsufficientCraftingLevelError";
+  }
+}
+
 export type EquipmentError =
   | ArtifactsApiError
+  | InsufficientCraftingLevelError
   | InventoryFullError
   | LocationNotFoundError
   | MonsterNotFoundError
@@ -277,6 +294,21 @@ const ensureHeldItem = (
 
       if (item.craft?.skill !== undefined) {
         const craftSkill = item.craft.skill;
+        const requiredLevel = item.craft.level ?? 0;
+        const currentLevel = craftSkillLevel(agent.getCharacter(), craftSkill);
+
+        // Checked before gathering a single material: attempting the craft
+        // anyway would fail at the very last step regardless, after already
+        // paying for whatever materials it needed - found live, right after
+        // fixing the similar isSafeToFight gap (see UnsafeMonsterError):
+        // "a known source exists" still doesn't mean "this is actually
+        // usable right now".
+        if (currentLevel < requiredLevel) {
+          return errAsync(
+            new InsufficientCraftingLevelError(itemCode, craftSkill, requiredLevel, currentLevel),
+          );
+        }
+
         const craftYield = item.craft.quantity ?? 1;
         const craftsNeeded = Math.ceil(stillMissing / craftYield);
         const materials = item.craft.items ?? [];
