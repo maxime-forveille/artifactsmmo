@@ -8,9 +8,10 @@ type CombatAgent = Pick<CharacterAgent, "fight" | "getCharacter" | "rest">;
 type FightOutcome =
   ReturnType<CombatAgent["fight"]> extends ResultAsync<infer T, unknown> ? T : never;
 
-// Rest once HP drops below this fraction of max HP, so a string of unlucky
-// fights doesn't risk the character going down before it gets a chance to
-// heal between actions.
+// Rest unless HP is strictly above this fraction of max HP. A fight can
+// deal up to roughly this same fraction in damage, so resting only when
+// strictly above (not at-or-above) the threshold keeps a fight from ever
+// landing exactly on 0 HP - which happened in practice when this was `>=`.
 const REST_THRESHOLD_RATIO = 0.5;
 
 const restIfLow = (
@@ -18,7 +19,7 @@ const restIfLow = (
 ): ResultAsync<void, ArtifactsApiError> => {
   const character = agent.getCharacter();
 
-  if (character.hp >= character.max_hp * REST_THRESHOLD_RATIO) {
+  if (character.hp > character.max_hp * REST_THRESHOLD_RATIO) {
     return okAsync(undefined);
   }
 
@@ -31,10 +32,10 @@ const restIfLow = (
 };
 
 /**
- * Rests first if HP is below half, then fights once (no participants -
- * solo fights only), logging a warning if the fight is lost. Callers
- * decide what "done" means (inventory full, enough of an item held, ...)
- * and loop accordingly.
+ * Rests first unless HP is strictly above half, then fights once (no
+ * participants - solo fights only), logging a warning if the fight is
+ * lost. Callers decide what "done" means (inventory full, enough of an
+ * item held, ...) and loop accordingly.
  */
 export const fightSafely = (agent: CombatAgent): ResultAsync<FightOutcome, ArtifactsApiError> =>
   restIfLow(agent)
