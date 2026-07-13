@@ -1,14 +1,17 @@
-import { errAsync, okAsync } from "neverthrow";
+import { errAsync, okAsync, type ResultAsync } from "neverthrow";
 
 import type { ArtifactsClient } from "../../client/index.js";
+import type { components } from "../../client/schema.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
-import { findBestGatheringTool } from "../gear.js";
+import { findBestCombatWeapon, findBestGatheringTool } from "../gear.js";
 import { findNextSafeMonster } from "../progression.js";
 import { craftAndEquip } from "../strategies/equipment.js";
 import { runFarmingCycle } from "../strategies/farming.js";
 import { runHuntingCycle } from "../strategies/hunting.js";
 import { runForever } from "./runForever.js";
+
+type Monster = components["schemas"]["MonsterSchema"];
 
 export class NoSafeMonsterFoundError extends Error {
   constructor(level: number) {
@@ -21,34 +24,31 @@ export class NoSafeMonsterFoundError extends Error {
  * Equips the best available gathering tool for the skill `resourceCode`
  * requires (see `findBestGatheringTool`), if any exists at the character's
  * level. A no-op when no such tool is found. Failures (e.g. the resource
- * lookup or the craft/equip itself) are logged but never block farming -
- * the character just keeps whatever's currently equipped.
+ * lookup or the craft/equip itself) are logged and swallowed - the
+ * character just keeps whatever's currently equipped - so callers can
+ * always treat this as succeeding.
  */
-const equipGatheringToolIfAvailable = async (
+const equipGatheringToolIfAvailable = (
   client: ArtifactsClient,
   characterName: string,
   agent: CharacterAgent,
   resourceCode: string,
-): Promise<void> => {
-  const result = await client
+): ResultAsync<void, never> =>
+  client
     .getResource(resourceCode)
     .andThen((response) =>
       findBestGatheringTool(client, response.data.skill, agent.getCharacter().level),
     )
     .andThen((tool) =>
       tool === undefined ? okAsync(undefined) : craftAndEquip(client, agent, tool.code),
-    );
-
-  result.match(
-    () => {},
-    (error) => {
+    )
+    .orElse((error) => {
       logger.error(
         error,
         `${characterName}: failed to equip a gathering tool for ${resourceCode}, continuing with current gear`,
       );
-    },
-  );
-};
+      return okAsync(undefined);
+    });
 
 export const runFarmTask = async (
   client: ArtifactsClient,
@@ -62,21 +62,61 @@ export const runFarmTask = async (
   );
 };
 
-export const runHuntTask = (
+/**
+ * Equips the best available weapon for fighting `monster` (see
+ * `findBestCombatWeapon`), if it differs from what's currently equipped.
+ * Same non-blocking failure handling as `equipGatheringToolIfAvailable`.
+ */
+const equipCombatWeaponIfAvailable = (
+  client: ArtifactsClient,
+  characterName: string,
+  agent: CharacterAgent,
+  monster: Monster,
+): ResultAsync<void, never> =>
+  findBestCombatWeapon(client, agent.getCharacter(), monster, agent.getCharacter().level)
+    .andThen((weapon) =>
+      weapon === undefined ? okAsync(undefined) : craftAndEquip(client, agent, weapon.code),
+    )
+    .orElse((error) => {
+      logger.error(
+        error,
+        `${characterName}: failed to equip a combat weapon for ${monster.code}, continuing with current gear`,
+      );
+      return okAsync(undefined);
+    });
+
+export const runHuntTask = async (
   client: ArtifactsClient,
   characterName: string,
   agent: CharacterAgent,
   monsterCode: string,
-): Promise<void> =>
-  runForever(characterName, "hunting cycle", () => runHuntingCycle(client, agent, monsterCode));
+): Promise<void> => {
+  await client
+    .getMonster(monsterCode)
+    .andThen((response) =>
+      equipCombatWeaponIfAvailable(client, characterName, agent, response.data),
+    )
+    .orElse((error) => {
+      logger.error(
+        error,
+        `${characterName}: failed to look up ${monsterCode} for weapon selection, continuing with current gear`,
+      );
+      return okAsync(undefined);
+    });
+
+  await runForever(characterName, "hunting cycle", () =>
+    runHuntingCycle(client, agent, monsterCode),
+  );
+};
 
 /**
  * Same as a fixed `hunt`, but re-picks the safest, highest-level monster
  * before every cycle instead of using a fixed code (see
- * `findNextSafeMonster`). When nothing is currently safe to fight, that's
- * treated the same as any other cycle failure: logged and retried shortly
- * (equipment upgrades to make more monsters safe aren't automated yet -
- * see the README's roadmap).
+ * `findNextSafeMonster`), equipping the best weapon for that monster each
+ * time too (see `equipCombatWeaponIfAvailable`) since the target - and so
+ * the ideal weapon - can change from one cycle to the next. When nothing
+ * is currently safe to fight, that's treated the same as any other cycle
+ * failure: logged and retried shortly.
  */
 export const runAutoHuntTask = (
   client: ArtifactsClient,
@@ -87,7 +127,9 @@ export const runAutoHuntTask = (
     findNextSafeMonster(client, agent.getCharacter()).andThen((monster) =>
       monster === undefined
         ? errAsync(new NoSafeMonsterFoundError(agent.getCharacter().level))
-        : runHuntingCycle(client, agent, monster.code),
+        : equipCombatWeaponIfAvailable(client, characterName, agent, monster).andThen(() =>
+            runHuntingCycle(client, agent, monster.code),
+          ),
     ),
   );
 

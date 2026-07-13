@@ -13,7 +13,7 @@ type Element = (typeof ELEMENTS)[number];
 
 // Characters have %damage bonuses (from rings/amulets, typically); monsters
 // don't, so these are optional here and simply treated as 0 for monsters.
-type OffensiveStats = {
+export type OffensiveStats = {
   readonly [K in `attack_${Element}`]: number;
 } & {
   readonly [K in `dmg_${Element}`]?: number;
@@ -22,7 +22,7 @@ type OffensiveStats = {
   readonly dmg?: number;
 };
 
-type DefensiveStats = {
+export type DefensiveStats = {
   readonly [K in `res_${Element}`]: number;
 };
 
@@ -35,7 +35,10 @@ type CombatStats = DefensiveStats & OffensiveStats & { readonly hp: number };
  * across all four elements, then scaled up by the attacker's average
  * critical-strike bonus (a `critical_strike`% chance of +50% damage).
  */
-const averageDamagePerTurn = (attacker: OffensiveStats, defender: DefensiveStats): number => {
+export const averageDamagePerTurn = (
+  attacker: OffensiveStats,
+  defender: DefensiveStats,
+): number => {
   const rawDamage = ELEMENTS.reduce((total, element) => {
     const dmgBonus = (attacker.dmg ?? 0) + (attacker[`dmg_${element}`] ?? 0);
     const boostedAttack = attacker[`attack_${element}`] * (1 + dmgBonus / 100);

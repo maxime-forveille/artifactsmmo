@@ -158,6 +158,9 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
   const getResources = (query?: paths["/resources"]["get"]["parameters"]["query"]) =>
     toResult(client.GET("/resources", { params: query === undefined ? {} : { query } }));
 
+  const getMonster = (code: string) =>
+    toResult(client.GET("/monsters/{code}", { params: { path: { code } } }));
+
   const getMonsters = (query?: paths["/monsters"]["get"]["parameters"]["query"]) =>
     toResult(client.GET("/monsters", { params: query === undefined ? {} : { query } }));
 
@@ -267,6 +270,7 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
     getItem,
     getItems,
     getMaps,
+    getMonster,
     getMonsters,
     getResource,
     getResources,

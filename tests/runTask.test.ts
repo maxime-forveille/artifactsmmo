@@ -100,6 +100,7 @@ const buildFakeClient = (overrides: Partial<ArtifactsClient> = {}): ArtifactsCli
     getItem: notImplemented,
     getItems: notImplemented,
     getMaps: notImplemented,
+    getMonster: notImplemented,
     getMonsters: notImplemented,
     getResource: notImplemented,
     getResources: notImplemented,
@@ -323,6 +324,50 @@ describe("runTask", () => {
 
       await vi.advanceTimersByTimeAsync(1);
       expect(getMaps).toHaveBeenCalledTimes(2);
+    });
+
+    it("equips the best combat weapon for the monster before starting to hunt", async () => {
+      const character = buildCombatCharacter({
+        attack_earth: 20,
+        inventory: [{ code: "copper_dagger", quantity: 1, slot: 1 }],
+        level: 4,
+      });
+      const monster = buildMonster({ code: "chicken", res_air: 0, res_earth: 0 });
+      const dagger = buildItem({
+        code: "copper_dagger",
+        effects: [{ code: "attack_air", description: "", value: 6 }],
+        type: "weapon",
+      });
+      const getMonster = vi.fn(() => okAsync({ data: monster }));
+      const getItems = vi.fn(() =>
+        okAsync({ data: [dagger], page: 1, pages: 1, size: 100, total: 1 }),
+      );
+      const getItem = vi.fn(() => okAsync({ data: dagger }));
+      const equip = vi.fn(() =>
+        okAsync({
+          data: { character, cooldown: buildCooldown("2024-01-01T00:00:03.000Z"), items: [] },
+        }),
+      );
+      const apiError = new ArtifactsApiError("boom", 500, undefined);
+      const getMaps = vi.fn(() => errAsync(apiError));
+      const client = buildFakeClient({
+        equip,
+        getCharacter: () => okAsync({ data: character }),
+        getItem,
+        getItems,
+        getMaps,
+        getMonster,
+      });
+
+      void runTask(client, "Cartman", { monster: "chicken", type: "hunt" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getMonster).toHaveBeenCalledWith("chicken");
+      expect(getItems).toHaveBeenCalledWith({ max_level: 4, size: 100, type: "weapon" });
+      expect(equip).toHaveBeenCalledWith("Cartman", [
+        { code: "copper_dagger", quantity: 1, slot: "weapon" },
+      ]);
+      expect(getMaps).toHaveBeenCalledTimes(1);
     });
   });
 
