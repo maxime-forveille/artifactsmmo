@@ -282,13 +282,15 @@ Recently delivered (see git log for details):
   slot (`findBestCombatGear`, `src/bot/gear.ts`), and `autoHunt` now
   re-checks all of them right after a character levels up, not just the
   weapon (see "Automated progression decisions" below)
+- ✅ Dry-run material-cost query (`materialsNeededFor`,
+  `src/bot/materialPlan.ts`) - read-only version of `ensureHeldItem` that
+  reports what's missing to craft/hold an item without acting on it (see
+  "Automated progression decisions" below)
 
 Up next (not yet started, roughly in order of likely value):
 
-- [ ] Dry-run material cost query (`materialsNeededFor`) - the next concrete
-  piece for "Automated progression decisions", point 6 below
 - [ ] Read-only "does any combat slot have an available upgrade" query
-  (companion to the above, smaller)
+  (Gap A under "Automated progression decisions", point 6 below)
 - [ ] Grand Exchange trading
 - [ ] Multi-character boss fights
 - [ ] Discord notifications for notable events (rare drops, task failures)
@@ -441,19 +443,24 @@ the bigger, still-open piece of "automated progression decisions".
      by both the existing action pipeline and a future decision layer)
      would let a policy ask "is there an upgrade at all" without
      committing to fetching/crafting it.
-   - **Gap B (the real missing piece): a dry-run material-cost query.**
-     `craftAndEquip`/`ensureHeldItem` (`strategies/equipment.ts`) already
-     do full recursive material resolution (inventory -> bank -> craft
-     materials recursively -> else find a resource/monster and
-     gather/hunt), but only as an action pipeline with real side effects
-     (it moves the character, withdraws, gathers, crafts). Without a
-     side-effect-free version that mirrors the same recursion and
-     answers "what's still missing, and where would it come from" as
-     data, a decision policy can't tell "this upgrade is free right now"
-     from "this upgrade needs an hour of mining first" - exactly the
-     judgment a human currently makes by eye when hand-picking
-     `tasks.json` entries. This is the next piece planned for
-     implementation (tentatively `materialsNeededFor` in a new module).
+   - ✅ **Gap B (the real missing piece): a dry-run material-cost query.**
+     `materialsNeededFor` (`src/bot/materialPlan.ts`) mirrors
+     `ensureHeldItem`'s exact recursion (`strategies/equipment.ts`:
+     inventory -> bank -> craft materials recursively -> else classify
+     the raw material as gatherable/huntable/unknown), but as a pure,
+     side-effect-free query: it takes a character snapshot and returns
+     `readonly MissingMaterial[]` (`{itemCode, missingQuantity, source}`,
+     `source` being `{type: "gather"|"hunt", ...code}` or `{type:
+     "unknown"}`) instead of moving/withdrawing/gathering/crafting
+     anything. A decision policy can now tell "this upgrade is free right
+     now" from "this upgrade needs an hour of mining first" without
+     acting on it. Known simplifications (documented in the module):
+     doesn't account for an item already equipped elsewhere the way
+     `reclaimEquippedIfAvailable` does, and each recursive branch checks
+     the bank independently, so a material shared by two craft branches
+     is counted as available to both rather than split between them -
+     fine for a rough "how much is missing" estimate, not for acting on
+     several such estimates at once.
    - Building Gap A and Gap B closes the remaining distance between (b)
      and (a): once both exist, a `decideActivity()` policy becomes a
      matter of combining outputs that already exist as data, rather than
