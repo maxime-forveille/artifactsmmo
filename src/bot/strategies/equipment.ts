@@ -4,7 +4,7 @@ import type { ArtifactsApiError, ArtifactsClient } from "../../client/index.js";
 import type { components } from "../../client/schema.js";
 import { logger } from "../../utils/logger.js";
 import type { CharacterAgent } from "../characters/characterAgent.js";
-import { fightSafely } from "../combat.js";
+import { fightSafely, isSafeToFight } from "../combat.js";
 import { EQUIP_SLOT_BY_ITEM_TYPE, equippedItemInSlot, SLOT_FIELD } from "../gear.js";
 import { heldItems, heldQuantity, isInventoryFull, totalItemCount } from "../inventory.js";
 import {
@@ -37,12 +37,25 @@ export class InventoryFullError extends Error {
   }
 }
 
+export class UnsafeMonsterError extends Error {
+  constructor(
+    public readonly itemCode: string,
+    public readonly monsterCode: string,
+  ) {
+    super(
+      `Fighting "${monsterCode}" for "${itemCode}" isn't safe with the character's current gear`,
+    );
+    this.name = "UnsafeMonsterError";
+  }
+}
+
 export type EquipmentError =
   | ArtifactsApiError
   | InventoryFullError
   | LocationNotFoundError
   | MonsterNotFoundError
   | ResourceNotFoundError
+  | UnsafeMonsterError
   | UnsupportedEquipSlotError;
 
 type EquipmentClient = Pick<
@@ -297,15 +310,28 @@ const ensureHeldItem = (
         )
         .orElse((error) =>
           error instanceof ResourceNotFoundError
-            ? findMonsterForDrop(client, itemCode)
-                .andThen((monster) => resolveLocation(client, "monster", monster.code))
-                .andThen((monsterMap) =>
+            ? findMonsterForDrop(client, itemCode).andThen((monster) => {
+                // Unlike the main autoHunt loop (findNextSafeMonster), this
+                // fallback has no other candidate to pick from - the game
+                // may only have one monster drop this exact material. So
+                // instead of skipping to a safer alternative, an unsafe
+                // match is a hard stop: fighting it anyway (fightSafely, via
+                // huntUntilHave, has no safety check of its own - it's built
+                // for a caller that already picked a safe target) risked
+                // sending a character into real fights it could lose badly,
+                // found live.
+                if (!isSafeToFight(agent.getCharacter(), monster)) {
+                  return errAsync(new UnsafeMonsterError(itemCode, monster.code));
+                }
+
+                return resolveLocation(client, "monster", monster.code).andThen((monsterMap) =>
                   agent
                     .moveTo(monsterMap.map_id)
                     .andThen(() =>
                       huntUntilHave(client, agent, itemCode, quantity, monsterMap.map_id),
                     ),
-                )
+                );
+              })
             : errAsync(error),
         );
     });

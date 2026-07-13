@@ -318,11 +318,37 @@ Recently delivered (see git log for details):
   for a worthwhile-but-not-free upgrade (`equipWorthwhileUpgrade`),
   instead of just logging it - as long as every missing material has a
   known source (see "Automated progression decisions" below)
+- ✅ Read-only "what could I craft right now from bank surplus" query
+  (`findCraftableFromBankSurplus`, `src/bot/materialPlan.ts`) - the
+  mirror image of `materialsNeededFor`, and the first gear-upgrade-
+  adjacent path in the codebase to actually check a crafting-skill
+  level, not just the character's overall level (see "Automated
+  progression decisions" and "Known Limitations" below)
+- 🐛 Fixed live: the level-up 8-slot gear scan now also runs on an
+  `autoHunt` task's very first cycle, not only after a level transition -
+  a character already at their current level when the task started (a
+  process restart, a reassignment) could otherwise never trigger a
+  "level increased" comparison, leaving a fully free upgrade unequipped
+  indefinitely (found live: a free `copper_legs_armor` sitting unequipped
+  on two level-8 characters).
+- 🐛 Fixed live: hunting a monster to obtain a raw craft material
+  (`ensureHeldItem`'s fallback in `strategies/equipment.ts`) now checks
+  `isSafeToFight` first and refuses (a new `UnsafeMonsterError`) instead
+  of fighting an unsafe monster anyway - unlike the main `autoHunt` loop
+  (`findNextSafeMonster`), this fallback had no safety check at all
+  before this fix, since `huntUntilHave`/`fightSafely` were built for a
+  caller that already picked a safe target. Found live, right after
+  shipping `equipWorthwhileUpgrade`: it made this fallback fire far more
+  often (any known-source material, not just ones a human explicitly
+  listed in a `craftAndEquip` task), which exposed the gap - two
+  characters were repeatedly losing fights against monsters well above
+  what their gear could handle, chasing amulet/armor materials.
 
 Up next (not yet started, roughly in order of likely value - see point 7
 under "Automated progression decisions" for the full staged plan):
 
-- [ ] Craft as its own profession activity (bank-surplus detection)
+- [ ] Wire `findCraftableFromBankSurplus` into an actual task (craft for
+  profession XP, not just combat gear)
 - [ ] Grand Exchange trading
 - [ ] Multi-character boss fights
 - [ ] Discord notifications for notable events (rare drops, task failures)
@@ -553,12 +579,37 @@ the bigger, still-open piece of "automated progression decisions".
      no cap on *how much* is missing before committing (no quantity
      threshold yet) - see the self-tuned-thresholds item below for why a
      static number wasn't invented here.
-   - 🕒 **Near-term - build this soon:**
-     - Craft as its own profession activity, not just a means to a combat
-       upgrade: detect a bank surplus worth transforming (profession XP
-       gained + decluttering), the mirror image of `materialsNeededFor`
-       ("what can I make from what's piling up" instead of "what's
-       missing to make this").
+     Two real bugs surfaced live once this shipped, both fixed (see
+     "Recently delivered" above for the full write-up): the "once after a
+     level-up" trigger was edge-based, not absolute, so a character
+     already at their current level when the task started never got its
+     first scan; and the fallback that hunts a monster for a raw material
+     had no `isSafeToFight` check at all, unlike the main `autoHunt` loop,
+     so a known-but-dangerous source was fought anyway instead of skipped.
+     Both are a direct consequence of committing to a *known* source
+     without weighing *how risky or costly* it actually is - the
+     `craftAndEquip`/`ensureHeldItem` fallback still has no notion of
+     "this source exists but isn't worth (or safe) pursuing", only
+     "exists" vs "unknown"; `UnsafeMonsterError` covers the safety half of
+     that gap for now, not the cost half.
+   - ✅ **Near-term - sensing for craft-as-a-profession (detection only,
+     not wired into any task yet).** `findCraftableFromBankSurplus`
+     (`src/bot/materialPlan.ts`) is the mirror image of
+     `materialsNeededFor`: given the bank's contents, it finds items the
+     character could craft *right now* without gathering or hunting
+     anything more, and - unlike every other gear-upgrade path in this
+     codebase (see "Known Limitations") - it actually checks the
+     character's crafting-skill level (`weaponcrafting_level`,
+     `gearcrafting_level`, ...) against the recipe's `craft.level`
+     requirement, since that check is the whole point of this function.
+     For each material code found in the bank, it looks up which items
+     consume it (`getItems`'s `craft_material` filter - the mirror of
+     `findResourceForDrop`'s `drop` filter), deduplicates candidates
+     surfaced by more than one surplus material, and reports how many
+     units of each are craftable from what's already held or banked.
+     Read-only, like `materialsNeededFor` and `findCombatGearUpgrades` -
+     wiring it into an actual task (crafting for profession XP, not just
+     combat gear) is the next piece.
    - 🎯 **Target, longer-term - noted but no infrastructure yet:**
      - Real cross-family arbitration (hunt vs farm *as an ongoing choice*,
        not just a one-off material fetch) - blocked on not having a

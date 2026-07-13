@@ -1,7 +1,7 @@
 import { errAsync, okAsync } from "neverthrow";
 import { describe, expect, it, vi } from "vitest";
 
-import { materialsNeededFor } from "../src/bot/materialPlan.js";
+import { findCraftableFromBankSurplus, materialsNeededFor } from "../src/bot/materialPlan.js";
 import { ArtifactsApiError } from "../src/client/index.js";
 import type { components } from "../src/client/schema.js";
 
@@ -16,11 +16,15 @@ type InventorySlot = components["schemas"]["InventorySlotSchema"];
 type SimpleItem = components["schemas"]["SimpleItemSchema"];
 type BankItemsPage = components["schemas"]["DataPage_SimpleItemSchema_"];
 
-const buildCharacter = (inventory: InventorySlot[] = []): Character =>
+const buildCharacter = (
+  inventory: InventorySlot[] = [],
+  overrides: Partial<Character> = {},
+): Character =>
   ({
     ...({} as Character),
     inventory,
     name: "Cartman",
+    ...overrides,
   }) as Character;
 
 const buildItem = (overrides: Partial<Item>): Item => ({ ...({} as Item), ...overrides });
@@ -54,6 +58,15 @@ const buildBankItemsPage = (data: SimpleItem[]): BankItemsPage => ({
 const emptyBank = () => vi.fn(() => okAsync(buildBankItemsPage([])));
 const noResources = () => vi.fn(() => okAsync(buildResourcePage([])));
 const noMonsters = () => vi.fn(() => okAsync(buildMonsterPage([])));
+
+type ItemPage = { data: Item[]; page: number; pages: number; size: number; total: number };
+const buildItemPage = (data: Item[]): ItemPage => ({
+  data,
+  page: 1,
+  pages: 1,
+  size: 100,
+  total: data.length,
+});
 
 describe("materialsNeededFor", () => {
   it("returns nothing already held in enough quantity, without calling the API", async () => {
@@ -221,5 +234,146 @@ describe("materialsNeededFor", () => {
 
     expect(result.isErr() && result.error).toBe(apiError);
     expect(getMonsters).not.toHaveBeenCalled();
+  });
+});
+
+describe("findCraftableFromBankSurplus", () => {
+  it("returns nothing when the bank is empty, without looking up any recipes", async () => {
+    const character = buildCharacter([], { weaponcrafting_level: 1 });
+    const getItems = vi.fn();
+
+    const result = await findCraftableFromBankSurplus(
+      { getBankItems: emptyBank(), getItems },
+      character,
+    );
+
+    expect(result.isOk() && result.value).toEqual([]);
+    expect(getItems).not.toHaveBeenCalled();
+  });
+
+  it("finds an item craftable from a bank surplus material, within the character's profession level", async () => {
+    const character = buildCharacter([], { weaponcrafting_level: 1 });
+    const woodenStaff = buildItem({
+      code: "wooden_staff",
+      craft: {
+        items: [{ code: "ash_wood", quantity: 2 }],
+        level: 1,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+      type: "weapon",
+    });
+    const getBankItems = vi.fn((query?: { item_code?: string }) =>
+      okAsync(
+        buildBankItemsPage(
+          query?.item_code === undefined || query.item_code === "ash_wood"
+            ? [{ code: "ash_wood", quantity: 10 }]
+            : [],
+        ),
+      ),
+    );
+    const getItems = vi.fn(() => okAsync(buildItemPage([woodenStaff])));
+
+    const result = await findCraftableFromBankSurplus({ getBankItems, getItems }, character);
+
+    expect(getItems).toHaveBeenCalledWith({ craft_material: "ash_wood", size: 100 });
+    expect(result.isOk() && result.value).toEqual([
+      { craftableQuantity: 5, itemCode: "wooden_staff", skill: "weaponcrafting" },
+    ]);
+  });
+
+  it("excludes a candidate whose profession level requirement isn't met yet", async () => {
+    const character = buildCharacter([], { weaponcrafting_level: 0 });
+    const woodenStaff = buildItem({
+      code: "wooden_staff",
+      craft: {
+        items: [{ code: "ash_wood", quantity: 2 }],
+        level: 1,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+      type: "weapon",
+    });
+    const getBankItems = vi.fn((query?: { item_code?: string }) =>
+      okAsync(
+        buildBankItemsPage(
+          query?.item_code === undefined || query.item_code === "ash_wood"
+            ? [{ code: "ash_wood", quantity: 10 }]
+            : [],
+        ),
+      ),
+    );
+    const getItems = vi.fn(() => okAsync(buildItemPage([woodenStaff])));
+
+    const result = await findCraftableFromBankSurplus({ getBankItems, getItems }, character);
+
+    expect(result.isOk() && result.value).toEqual([]);
+  });
+
+  it("excludes a candidate missing enough of a second required material", async () => {
+    const character = buildCharacter([], { weaponcrafting_level: 1 });
+    const woodenStaff = buildItem({
+      code: "wooden_staff",
+      craft: {
+        items: [
+          { code: "ash_wood", quantity: 2 },
+          { code: "feather", quantity: 1 },
+        ],
+        level: 1,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+      type: "weapon",
+    });
+    const getBankItems = vi.fn((query?: { item_code?: string }) => {
+      if (query?.item_code === undefined) {
+        return okAsync(buildBankItemsPage([{ code: "ash_wood", quantity: 10 }]));
+      }
+      if (query.item_code === "ash_wood") {
+        return okAsync(buildBankItemsPage([{ code: "ash_wood", quantity: 10 }]));
+      }
+      return okAsync(buildBankItemsPage([]));
+    });
+    const getItems = vi.fn(() => okAsync(buildItemPage([woodenStaff])));
+
+    const result = await findCraftableFromBankSurplus({ getBankItems, getItems }, character);
+
+    expect(result.isOk() && result.value).toEqual([]);
+  });
+
+  it("deduplicates a candidate surfaced by more than one surplus material", async () => {
+    const character = buildCharacter([], { weaponcrafting_level: 1 });
+    const woodenStaff = buildItem({
+      code: "wooden_staff",
+      craft: {
+        items: [
+          { code: "ash_wood", quantity: 2 },
+          { code: "copper_ore", quantity: 1 },
+        ],
+        level: 1,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+      type: "weapon",
+    });
+    const getBankItems = vi.fn((query?: { item_code?: string }) => {
+      if (query?.item_code === undefined) {
+        return okAsync(
+          buildBankItemsPage([
+            { code: "ash_wood", quantity: 10 },
+            { code: "copper_ore", quantity: 10 },
+          ]),
+        );
+      }
+      return okAsync(buildBankItemsPage([{ code: query.item_code, quantity: 10 }]));
+    });
+    const getItems = vi.fn(() => okAsync(buildItemPage([woodenStaff])));
+
+    const result = await findCraftableFromBankSurplus({ getBankItems, getItems }, character);
+
+    expect(getItems).toHaveBeenCalledTimes(2);
+    expect(result.isOk() && result.value).toEqual([
+      { craftableQuantity: 5, itemCode: "wooden_staff", skill: "weaponcrafting" },
+    ]);
   });
 });

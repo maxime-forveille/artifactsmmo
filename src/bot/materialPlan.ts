@@ -11,12 +11,28 @@ import {
 } from "./world.js";
 
 type Character = components["schemas"]["CharacterSchema"];
+type CraftSkill = components["schemas"]["CraftSkill"];
 type Item = components["schemas"]["ItemSchema"];
 
 type MaterialPlanClient = Pick<
   ArtifactsClient,
   "getBankItems" | "getItem" | "getMonsters" | "getResources"
 >;
+type CraftableFromSurplusClient = Pick<ArtifactsClient, "getBankItems" | "getItems">;
+
+const PROFESSION_LEVEL_FIELD: Record<CraftSkill, keyof Character> = {
+  alchemy: "alchemy_level",
+  cooking: "cooking_level",
+  gearcrafting: "gearcrafting_level",
+  jewelrycrafting: "jewelrycrafting_level",
+  mining: "mining_level",
+  weaponcrafting: "weaponcrafting_level",
+  woodcutting: "woodcutting_level",
+};
+
+/** `character`'s level in the crafting profession `skill` (e.g. `weaponcrafting_level` for `"weaponcrafting"`). */
+const professionLevel = (character: Character, skill: CraftSkill): number =>
+  character[PROFESSION_LEVEL_FIELD[skill]] as number;
 
 /** Where a still-missing raw material could come from, if anywhere known. */
 export type MaterialSource =
@@ -154,3 +170,118 @@ export const materialsNeededFor = (
     : client
         .getItem(itemCode)
         .andThen((response) => materialsNeededForItem(client, character, response.data, quantity));
+
+/** An item the character could craft right now from what's already held or banked. */
+export type CraftableFromSurplus = {
+  readonly craftableQuantity: number;
+  readonly itemCode: string;
+  readonly skill: CraftSkill;
+};
+
+/** How many units of `itemCode` are available right now, counting both inventory and bank. */
+const availableQuantity = (
+  client: Pick<MaterialPlanClient, "getBankItems">,
+  character: Character,
+  itemCode: string,
+): ResultAsync<number, ArtifactsApiError> =>
+  bankQuantity(client, itemCode).map((banked) => banked + heldQuantity(character, itemCode));
+
+/**
+ * How many times `item` could be crafted right now from what's already
+ * held or banked - the smallest ratio of available-to-needed across all
+ * of its materials, converted to units crafted via `item.craft.quantity`
+ * (the recipe's yield). `0` when any material is entirely unavailable, or
+ * when `item` isn't craftable at all (no `craft.items`).
+ */
+const craftableQuantityFor = (
+  client: Pick<MaterialPlanClient, "getBankItems">,
+  character: Character,
+  item: Item,
+): ResultAsync<number, ArtifactsApiError> => {
+  const materials = item.craft?.items ?? [];
+
+  if (materials.length === 0) {
+    return okAsync(0);
+  }
+
+  return materials
+    .reduce<ResultAsync<number, ArtifactsApiError>>(
+      (acc, material) =>
+        acc.andThen((craftsPossible) =>
+          availableQuantity(client, character, material.code).map((available) =>
+            Math.min(craftsPossible, Math.floor(available / material.quantity)),
+          ),
+        ),
+      okAsync(Number.POSITIVE_INFINITY),
+    )
+    .map((craftsPossible) =>
+      Number.isFinite(craftsPossible) ? craftsPossible * (item.craft?.quantity ?? 1) : 0,
+    );
+};
+
+/**
+ * Finds items the character could craft right now from whatever's sitting
+ * in the bank (plus inventory), without needing to gather or hunt anything
+ * more - the mirror image of `materialsNeededFor` ("what can I make from
+ * what's piling up" instead of "what's missing to make this"). Only
+ * considers items whose crafting-skill level requirement
+ * (`item.craft.level`) the character's own profession level already
+ * meets (`professionLevel`) - a candidate here is something the character
+ * could actually attempt right now, not just something they could
+ * theoretically hold the materials for (see the README's "Known
+ * Limitations" for why that distinction matters: nothing else in this
+ * codebase checks profession level before attempting a craft).
+ *
+ * Starts from the bank's own contents (`getBankItems`, first page only -
+ * a bank with more than one page of distinct item codes won't have all of
+ * them considered, a known simplification in the same spirit as
+ * `resolveLocation`'s "first match" shortcut) and, for each material code
+ * found there, looks up which items consume it (`getItems`'s
+ * `craft_material` filter - the mirror of `findResourceForDrop`'s `drop`
+ * filter). Candidates surfaced by more than one surplus material are
+ * deduplicated by item code before being evaluated.
+ */
+export const findCraftableFromBankSurplus = (
+  client: CraftableFromSurplusClient,
+  character: Character,
+): ResultAsync<readonly CraftableFromSurplus[], ArtifactsApiError> =>
+  client.getBankItems({ size: 100 }).andThen((bankPage) => {
+    const materialCodes = bankPage.data.map((entry) => entry.code);
+
+    return materialCodes
+      .reduce<ResultAsync<Map<string, Item>, ArtifactsApiError>>(
+        (acc, materialCode) =>
+          acc.andThen((candidates) =>
+            client.getItems({ craft_material: materialCode, size: 100 }).map((page) => {
+              for (const item of page.data) {
+                candidates.set(item.code, item);
+              }
+
+              return candidates;
+            }),
+          ),
+        okAsync(new Map<string, Item>()),
+      )
+      .andThen((candidates) => {
+        const eligible = [...candidates.values()]
+          .map((item) => ({ item, level: item.craft?.level, skill: item.craft?.skill }))
+          .filter(
+            (candidate): candidate is { item: Item; level: number; skill: CraftSkill } =>
+              candidate.skill !== undefined &&
+              candidate.level !== undefined &&
+              candidate.level <= professionLevel(character, candidate.skill),
+          );
+
+        return eligible.reduce<ResultAsync<readonly CraftableFromSurplus[], ArtifactsApiError>>(
+          (acc, { item, skill }) =>
+            acc.andThen((soFar) =>
+              craftableQuantityFor(client, character, item).map((craftableQuantity) =>
+                craftableQuantity > 0
+                  ? [...soFar, { craftableQuantity, itemCode: item.code, skill }]
+                  : soFar,
+              ),
+            ),
+          okAsync([]),
+        );
+      });
+  });

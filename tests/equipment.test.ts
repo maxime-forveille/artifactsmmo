@@ -1,7 +1,11 @@
 import { errAsync, okAsync } from "neverthrow";
 import { describe, expect, it, vi } from "vitest";
 
-import { craftAndEquip, UnsupportedEquipSlotError } from "../src/bot/strategies/equipment.js";
+import {
+  craftAndEquip,
+  UnsafeMonsterError,
+  UnsupportedEquipSlotError,
+} from "../src/bot/strategies/equipment.js";
 import { MonsterNotFoundError } from "../src/bot/world.js";
 import { ArtifactsApiError } from "../src/client/index.js";
 import type { components } from "../src/client/schema.js";
@@ -42,7 +46,24 @@ const buildResourcePage = (data: Resource[]): ResourcePage => ({
 
 type Monster = components["schemas"]["MonsterSchema"];
 type MonsterPage = components["schemas"]["StaticDataPage_MonsterSchema_"];
-const buildMonster = (code: string): Monster => ({ ...({} as Monster), code });
+// Zeroed-out combat stats by default (a harmless target that can't hit
+// back), so isSafeToFight's checks don't collapse to NaN just because a
+// test only cares about the drop/hunting plumbing, not the fight itself.
+const buildMonster = (code: string, overrides: Partial<Monster> = {}): Monster =>
+  ({
+    attack_air: 0,
+    attack_earth: 0,
+    attack_fire: 0,
+    attack_water: 0,
+    critical_strike: 0,
+    hp: 10,
+    res_air: 0,
+    res_earth: 0,
+    res_fire: 0,
+    res_water: 0,
+    ...overrides,
+    code,
+  }) as Monster;
 const buildMonsterPage = (data: Monster[]): MonsterPage => ({
   data,
   page: 1,
@@ -76,6 +97,11 @@ const createFakeCharacterState = (inventoryMaxItems = Number.MAX_SAFE_INTEGER) =
   const getCharacter = (): CharacterSnapshot =>
     ({
       ...({} as CharacterSnapshot),
+      attack_air: 0,
+      attack_earth: 10,
+      attack_fire: 0,
+      attack_water: 0,
+      critical_strike: 0,
       inventory: [...held.entries()].map(([code, quantity], index) => ({
         code,
         quantity,
@@ -85,6 +111,10 @@ const createFakeCharacterState = (inventoryMaxItems = Number.MAX_SAFE_INTEGER) =
       inventory_max_items: inventoryMaxItems,
       max_hp: 100,
       name: "Cartman",
+      res_air: 0,
+      res_earth: 0,
+      res_fire: 0,
+      res_water: 0,
     }) as CharacterSnapshot;
 
   const add = (code: string, quantity: number) => held.set(code, (held.get(code) ?? 0) + quantity);
@@ -841,6 +871,58 @@ describe("craftAndEquip", () => {
     expect(equip).toHaveBeenCalledWith([
       { code: "apprentice_gloves", quantity: 1, slot: "weapon" },
     ]);
+  });
+
+  it("refuses to hunt a monster that isn't safe with the character's current gear, instead of fighting it anyway", async () => {
+    const state = createFakeCharacterState();
+
+    const getItem = vi.fn((code: string) =>
+      code === "apprentice_gloves"
+        ? okAsync({
+            data: buildItem({
+              code: "apprentice_gloves",
+              craft: {
+                items: [{ code: "feather", quantity: 3 }],
+                level: 1,
+                quantity: 1,
+                skill: "weaponcrafting",
+              },
+              type: "weapon",
+            }),
+          } satisfies ItemResponse)
+        : okAsync({ data: buildItem({ code }) } satisfies ItemResponse),
+    );
+    const getMaps = vi.fn(() => okAsync(buildMapPage([buildMap(0)])));
+    const getResources = vi.fn(() => okAsync(buildResourcePage([]))); // nothing gathers "feather"
+    // Deals far more damage than the character (attack_earth: 10) can
+    // survive, and has enough hp that the character could never kill it
+    // fast enough either - isSafeToFight should refuse this matchup.
+    const dangerousMonster = buildMonster("dangerous_chicken", { attack_earth: 500, hp: 5_000 });
+    const getMonsters = vi.fn(() => okAsync(buildMonsterPage([dangerousMonster])));
+
+    const moveTo = vi.fn(() => okAsync(undefined));
+    const fight = vi.fn();
+
+    const result = await craftAndEquip(
+      { getBankItems: buildEmptyGetBankItems(), getItem, getMaps, getMonsters, getResources },
+      {
+        craft: vi.fn(),
+        depositItems: vi.fn(),
+        equip: vi.fn(),
+        fight,
+        gather: vi.fn(),
+        getCharacter: state.getCharacter,
+        moveTo,
+        rest: vi.fn(),
+        unequip: vi.fn(),
+        withdrawItems: vi.fn(),
+      },
+      "apprentice_gloves",
+    );
+
+    expect(result.isErr() && result.error).toBeInstanceOf(UnsafeMonsterError);
+    expect(moveTo).not.toHaveBeenCalled();
+    expect(fight).not.toHaveBeenCalled();
   });
 
   it("propagates a MonsterNotFoundError when a raw material can't be gathered or hunted", async () => {

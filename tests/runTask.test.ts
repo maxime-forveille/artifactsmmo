@@ -624,25 +624,16 @@ describe("runTask", () => {
       expect(rest).toHaveBeenCalledTimes(1);
     });
 
-    it("only re-checks the weapon slot when the character hasn't leveled up", async () => {
-      const character = buildCombatCharacter({ attack_earth: 20, hp: 1, level: 4, max_hp: 170 });
+    it("checks every combat slot on the task's first cycle, even without a level-up", async () => {
+      // Regression: without a first-cycle check, a character who was
+      // already at their current level before this task started (e.g.
+      // after a process restart) would never trigger a future "level
+      // increased" comparison, so a fully free upgrade could sit
+      // unequipped indefinitely - found live.
+      const character = buildCombatCharacter({ attack_earth: 20, hp: 170, level: 4, max_hp: 170 });
       const monster = buildMonster({ code: "chicken", hp: 60, level: 1 });
       const getMonsters = vi.fn(() =>
         okAsync({ data: [monster], page: 1, pages: 1, size: 50, total: 1 }),
-      );
-      const rest = vi.fn(() =>
-        okAsync({
-          data: {
-            character: buildCombatCharacter({
-              attack_earth: 20,
-              hp: 170,
-              level: 4,
-              max_hp: 170,
-            }),
-            cooldown: buildCooldown("2024-01-01T00:00:03.000Z"),
-            hp_restored: 169,
-          },
-        }),
       );
       const getItems = vi.fn((_query?: { type?: string }) =>
         okAsync({ data: [], page: 1, pages: 1, size: 100, total: 0 }),
@@ -653,12 +644,47 @@ describe("runTask", () => {
         getItems,
         getMaps,
         getMonsters,
-        rest,
       });
 
       void runTask(client, "Cartman", { type: "autoHunt" });
 
       await vi.advanceTimersByTimeAsync(0);
+      const sortStrings = (a: string | undefined, b: string | undefined) =>
+        (a ?? "").localeCompare(b ?? "");
+      const queriedTypes = getItems.mock.calls.map(([query]) => query?.type).sort(sortStrings);
+      expect(queriedTypes).toEqual(
+        ["amulet", "body_armor", "boots", "helmet", "leg_armor", "ring", "shield", "weapon"].sort(
+          sortStrings,
+        ),
+      );
+    });
+
+    it("only re-checks the weapon slot on a later cycle, once the first-cycle scan already happened", async () => {
+      const character = buildCombatCharacter({ attack_earth: 20, hp: 170, level: 4, max_hp: 170 });
+      const monster = buildMonster({ code: "chicken", hp: 60, level: 1 });
+      const getMonsters = vi.fn(() =>
+        okAsync({ data: [monster], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      const getItems = vi.fn((_query?: { type?: string }) =>
+        okAsync({ data: [], page: 1, pages: 1, size: 100, total: 0 }),
+      );
+      const getMaps = vi.fn(() => errAsync(new ArtifactsApiError("boom", 500, undefined)));
+      const client = buildFakeClient({
+        getCharacter: () => okAsync({ data: character }),
+        getItems,
+        getMaps,
+        getMonsters,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      // First cycle: the initial full-slot scan (see the test above), then
+      // the hunting cycle itself fails (getMaps errors), so runForever waits
+      // its retry delay before the second cycle.
+      await vi.advanceTimersByTimeAsync(0);
+      getItems.mockClear();
+
+      await vi.advanceTimersByTimeAsync(10_000);
       const queriedTypes = getItems.mock.calls.map(([query]) => query?.type);
       expect(queriedTypes).toEqual(["weapon"]);
     });
@@ -770,9 +796,7 @@ describe("runTask", () => {
       );
       const getMaps = vi.fn((query?: { content_type?: string }) =>
         okAsync({
-          data: [
-            { ...({} as MapSchema), map_id: query?.content_type === "monster" ? 1 : 2 },
-          ],
+          data: [{ ...({} as MapSchema), map_id: query?.content_type === "monster" ? 1 : 2 }],
           page: 1,
           pages: 1,
           size: 50,

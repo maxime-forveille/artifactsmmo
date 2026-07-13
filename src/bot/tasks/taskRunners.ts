@@ -358,11 +358,16 @@ export const runHuntTask = async (
  * shortly.
  *
  * The other 7 combat slots (armor, shield, ring, amulet) are only
- * re-checked right after the character levels up, not every cycle: their
- * "best" choice changes far less often than the weapon's (which already
- * tracks the current target every cycle), so checking all of them
- * constantly would mean several extra `getItems`/`getItem` calls per
- * cycle for very little benefit most of the time. That level-up check
+ * re-checked on the task's first cycle and right after the character
+ * levels up, not every cycle: their "best" choice changes far less often
+ * than the weapon's (which already tracks the current target every
+ * cycle), so checking all of them constantly would mean several extra
+ * `getItems`/`getItem` calls per cycle for very little benefit most of
+ * the time. The first-cycle check matters even for a character who isn't
+ * freshly leveling up: without it, whatever level they already happened
+ * to be at when this task started would never trigger a future "level
+ * increased" comparison, so a fully free upgrade could sit unequipped
+ * indefinitely (this happened live). That level-up/first-cycle check
  * (`equipAllCombatGearIfWorthwhile`) also commits to a worthwhile
  * upgrade even when it isn't completely free, as long as every missing
  * material has a known source - the every-cycle weapon check
@@ -375,7 +380,17 @@ export const runAutoHuntTask = (
   agent: CharacterAgent,
   signal?: AbortSignal,
 ): Promise<void> => {
-  let lastGearCheckLevel = agent.getCharacter().level;
+  // undefined means "never checked yet", not "checked at some level" - so
+  // the very first cycle always gets the full 8-slot scan too, regardless
+  // of what level the character happens to already be at when this task
+  // starts (e.g. after a process restart, or a plain task reassignment).
+  // Using the character's own current level here instead would silently
+  // skip that first scan forever, since a level that was already reached
+  // before the task started can't trigger a future "level increased"
+  // comparison (regression: found live - a fully free leg armor upgrade
+  // sat unequipped indefinitely because the character had already been
+  // level 8 since before this check existed).
+  let lastGearCheckLevel: number | undefined;
 
   return runForever(
     characterName,
@@ -387,13 +402,15 @@ export const runAutoHuntTask = (
             return errAsync(new NoSafeMonsterFoundError(agent.getCharacter().level));
           }
 
-          const leveledUp = agent.getCharacter().level > lastGearCheckLevel;
+          const currentLevel = agent.getCharacter().level;
+          const needsGearCheck =
+            lastGearCheckLevel === undefined || currentLevel > lastGearCheckLevel;
 
-          if (leveledUp) {
-            lastGearCheckLevel = agent.getCharacter().level;
+          if (needsGearCheck) {
+            lastGearCheckLevel = currentLevel;
           }
 
-          const equipGear = leveledUp
+          const equipGear = needsGearCheck
             ? equipAllCombatGearIfWorthwhile(client, characterName, agent, monster)
             : equipBestCombatGearIfAvailable(client, characterName, agent, monster, "weapon");
 
