@@ -69,6 +69,9 @@ pnpm dev
 │   │   │                    # (held quantity, full-capacity checks, ...)
 │   │   ├── progression.ts   # Automated decision layer (in progress): what
 │   │   │                    # to hunt/farm/craft next, e.g. findNextSafeMonster
+│   │   ├── xpRates.ts       # observedMonsterXpRates: XP/second per monster,
+│   │   │                    # derived from GET /my/logs/{name} - no guessed
+│   │   │                    # game formula, only data the API has revealed
 │   │   └── world.ts         # Resolves resource/monster/workshop codes to
 │   │                        # map positions
 │   ├── client/              # Typed, Result-based Artifacts MMO API wrapper,
@@ -208,18 +211,22 @@ Recently delivered (see git log for details):
   `Task` yet (it needs both characters on the same tile, which the current
   one-character-per-task model doesn't coordinate), but available and used
   for one-off moves like consolidating a spare weapon onto one character
-- ✅ `autoHunt` task: picks the highest-level monster that's still safe to
-  fight, re-evaluated every cycle instead of a fixed monster code (see
-  "Automated progression decisions" below) — all 5 characters run it now
+- ✅ `autoHunt` task: picks the best monster that's still safe to fight,
+  re-evaluated every cycle instead of a fixed monster code — all 5
+  characters run it now (see "Automated progression decisions" below)
 - ✅ Task-appropriate equipment: `farm` equips the best gathering tool for
   the resource's skill before gathering, and `hunt`/`autoHunt` equip the
   best weapon against the specific monster being fought, both via the
   existing bank-aware `craftAndEquip` (see "Automated progression
   decisions" below)
+- ✅ Target selection now prefers whichever safe monster has the best
+  *observed* XP/second rate from the character's own fight history (`GET
+  /my/logs/{name}`), falling back to the highest-level heuristic for
+  monsters it hasn't fought recently (see "Automated progression
+  decisions" below)
 
 Up next (not yet started, roughly in order of likely value):
 
-- [ ] **Target selection by XP/loot rate** — see the design notes below.
 - [ ] A lightweight way to reassign tasks without restarting the process
 - [ ] Grand Exchange trading
 - [ ] Multi-character boss fights
@@ -253,13 +260,14 @@ pieces:
      simplification, not an oversight) — revisit only if real fights diverge
      too much from the prediction.
 2. ✅ **`findNextSafeMonster(client, character)`** (`src/bot/progression.ts`)
-   — queries monsters up to the character's level and picks the
-   highest-level one `isSafeToFight` still allows (a stand-in for "most
-   XP/loot" until the real rate estimate in point 4 exists). Returns
-   `undefined` when nothing qualifies, which callers should treat as "go
-   upgrade gear instead" (point 3). Wired in as the new `autoHunt` `Task`
-   (`src/bot/tasks/runTask.ts`), which re-picks the target every cycle
-   instead of using a fixed monster code — all 5 characters run it now.
+   — queries monsters up to the character's level and picks the best one
+   `isSafeToFight` still allows, using the observed XP/second rate from
+   point 4 where available and the highest-level heuristic as a fallback
+   otherwise. Returns `undefined` when nothing qualifies, which callers
+   should treat as "go upgrade gear instead" (point 3). Wired in as the new
+   `autoHunt` `Task` (`src/bot/tasks/runTask.ts`), which re-picks the
+   target every cycle instead of using a fixed monster code — all 5
+   characters run it now.
 3. ✅ **Task-appropriate equipment ("build per task")** (`src/bot/gear.ts`)
    — equip whatever fits the activity at hand, not just the highest raw
    combat stats.
@@ -286,10 +294,29 @@ pieces:
      just keeps whatever's currently equipped.
    - Still open: `findNextSafeMonster` returning `undefined` doesn't yet
      trigger "try upgrading gear first" — it just retries later.
-4. **Target selection by XP/loot rate** — replace `findNextSafeMonster`'s
-   "highest level that's safe" stand-in with a real estimate — XP/action
-   and time/action (accounting for cooldowns) — once there's a reason to
-   believe level alone isn't a good enough proxy.
+4. ✅ **Target selection by XP/loot rate** (`src/bot/xpRates.ts`) — replaces
+   `findNextSafeMonster`'s "highest level that's safe" stand-in with a real
+   estimate, without guessing at a game formula: the API never reveals a
+   monster's XP ahead of time, only after a fight actually happens (in the
+   fight response, and in `GET /my/logs/{name}`'s history of past ones).
+   - `observedMonsterXpRates(client, characterName)` fetches the
+     character's last 100 log entries, sums XP and cooldown seconds per
+     opponent across every fight found (win *or* loss — a loss's 0 XP is
+     real data, not something to discard), and returns XP/second per
+     monster code. A monster this character hasn't fought recently is
+     simply absent from the result, not zero - `findNextSafeMonster` only
+     compares monsters it actually has a rate for.
+   - `findNextSafeMonster` now picks whichever safe monster has the best
+     observed rate, falling back to the old highest-level heuristic when
+     none of the safe candidates have been fought recently enough to have
+     one yet (e.g. right after leveling into a new bracket).
+   - `observedMonsterXpRatesOrEmpty` degrades a log-fetch failure to an
+     empty map instead of blocking target selection - same non-blocking
+     spirit as the equipment failures in point 3.
+   - Because the rates come from the account's own server-side log
+     history (`/my/logs/{name}`, last ~5000 actions), this survives
+     process restarts for free - no separate persistence needed for this
+     piece.
 
 This will likely replace the fixed resource/monster codes in `farm`/`hunt`
 tasks with periodic re-evaluation (e.g. after every cycle) rather than a

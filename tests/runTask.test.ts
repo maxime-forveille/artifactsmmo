@@ -97,6 +97,7 @@ const buildFakeClient = (overrides: Partial<ArtifactsClient> = {}): ArtifactsCli
     fight: notImplemented,
     gather: notImplemented,
     getCharacter: () => okAsync({ data: buildCharacter() }),
+    getCharacterLogs: notImplemented,
     getItem: notImplemented,
     getItems: notImplemented,
     getMaps: notImplemented,

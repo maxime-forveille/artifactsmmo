@@ -167,6 +167,11 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
   const getBankItems = (query?: paths["/my/bank/items"]["get"]["parameters"]["query"]) =>
     toResult(client.GET("/my/bank/items", { params: query === undefined ? {} : { query } }));
 
+  const getCharacterLogs = (
+    name: string,
+    query?: paths["/my/logs/{name}"]["get"]["parameters"]["query"],
+  ) => toResult(client.GET("/my/logs/{name}", { params: { path: { name }, query: query ?? {} } }));
+
   const moveCharacter = (name: string, destination: components["schemas"]["DestinationSchema"]) =>
     toResult(
       client.POST("/my/{name}/action/move", {
@@ -267,6 +272,7 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
     gather,
     getBankItems,
     getCharacter,
+    getCharacterLogs,
     getItem,
     getItems,
     getMaps,
