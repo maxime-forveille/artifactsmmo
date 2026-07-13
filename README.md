@@ -535,6 +535,52 @@ the bigger, still-open piece of "automated progression decisions".
        webhook/push mechanism instead of polling (same item as above,
        restated here as part of the staged plan).
 
+### Cross-character orchestration (target architecture, not started)
+
+Everything above is about a single character deciding its own next move.
+But some decisions only make sense with visibility across all 5
+characters at once: who should farm a resource because a *different*
+character needs it to craft, who should switch to processing a bank
+surplus, or several characters teaming up for a fight the game models as
+a group encounter (see "Known Limitations" - multi-character boss fights
+aren't supported at all yet). A design review sketched the target shape
+for this, deliberately staged behind the still-in-progress per-character
+work above rather than built now:
+
+1. A read-only, shared snapshot of all 5 characters (level, inventory,
+   equipped gear, position, skills) plus bank contents - the
+   prerequisite visibility any cross-character decision needs, mirroring
+   the "sensing before policy" split already applied above (Gap A/B).
+   Computed on demand directly from the API (`getCharacter` x5 +
+   `getBankItems`) for now, not persisted anywhere - the same "observed
+   API data instead of a duplicated store" principle `xpRates.ts`
+   already applies to combat rates. Revisit with something like SQLite
+   once there's a real need for history/aggregation the API doesn't
+   already give for free, not before.
+2. The orchestrator itself becomes another producer of `TaskAssignment[]`,
+   feeding the exact `reconcileTasks`/`taskSupervisor.ts` mechanism that
+   already exists (today fed by a human editing `tasks.json`) - not a new
+   execution model. Each character keeps running its own
+   `runTask`/`runForever` loop, oblivious to the orchestrator; it just
+   receives a different task from time to time, exactly like a human
+   editing `tasks.json` does today.
+3. Once proven, the orchestrator is expected to become the sole source of
+   assignments - `tasks.json` (the human-edited one) fades out as the
+   bot's autonomy grows. One exception planned: a one-shot, explicit
+   human override request that takes precedence over the orchestrator
+   temporarily for a specific character, then hands control back once it
+   completes - the closest thing to a manual command channel once the
+   bot is mostly running itself.
+
+Deliberately left open, to avoid speculative design ahead of a real
+need: exactly which cross-character decisions get built first (material
+sourcing for someone else's craft? bank surplus processing? group
+fights?), and how the orchestrator's own decision policy is structured
+internally. These wait until the per-character `decideActivity()` pieces
+above are far enough along to inform them with real signals - the same
+"build the sensing, then the policy" order applied throughout this
+document.
+
 ## Debugging
 
 ### Enable Verbose Logging
