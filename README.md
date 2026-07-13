@@ -679,6 +679,41 @@ the bigger, still-open piece of "automated progression decisions".
        webhook/push mechanism instead of polling (same item as above,
        restated here as part of the staged plan).
 
+8. **Design review: a priority cascade for hunt/craft/gather (single
+   character, not started).** Rather than a numeric value-comparison
+   model (which would need a gathering XP/second rate comparable to
+   `observedMonsterXpRates` - still missing, see point 7's target list),
+   the next concrete step is a fixed **priority cascade**, cheaper to
+   build and reason about:
+   1. Hunt (`autoHunt`) is the default, ongoing activity.
+   2. Whenever a known, safe, currently-eligible gear upgrade exists
+      (already detected today via `findCombatGearUpgrades` +
+      `materialsNeededFor`), divert to it: gather/hunt whatever's
+      missing (already how `equipWorthwhileUpgrade` works), then resume
+      hunting.
+   3. If that upgrade is blocked by `InsufficientCraftingLevelError`
+      (the character's crafting-skill level, not the item's equip
+      level), divert instead into crafting whatever `findCraftableFromBankSurplus`
+      currently finds - opportunistic, already-available profession XP,
+      rather than inventing a new "craft something, anything, just for
+      the XP" mechanic. If surplus has nothing craftable either, fall
+      back to hunting and simply retry later.
+   4. Close the loop: track the exact `{skill, requiredLevel}` pairs
+      seen in step 3's `InsufficientCraftingLevelError`s, and re-run the
+      full gear scan not only on a character level-up (as today) but
+      also the moment any tracked profession level actually reaches its
+      recorded target - not on every minor XP tick, only when a
+      specific known block is actually cleared.
+   Planned implementation shape: export the currently-private `ensureHeld`
+   (`strategies/equipment.ts`) - it already does "obtain N of this item by
+   whatever means, without equipping" - since step 3 needs to craft
+   non-equippable filler items too (e.g. cooking output), which
+   `craftAndEquip` can't do (it requires an equip slot to exist at all).
+   Everything else composes signals that already exist
+   (`findCombatGearUpgrades`, `materialsNeededFor`, `InsufficientCraftingLevelError`,
+   `findCraftableFromBankSurplus`, `craftSkillLevel`) rather than needing
+   new sensing - consistent with every other piece on this list.
+
 ### Cross-character orchestration (target architecture, not started)
 
 Everything above is about a single character deciding its own next move.
