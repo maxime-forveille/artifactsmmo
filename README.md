@@ -413,6 +413,20 @@ Recently delivered (see git log for details):
 Up next (not yet started, roughly in order of likely value - see point 7
 under "Automated progression decisions" for the full staged plan):
 
+- [ ] Recycling low-level crafted items to reclaim raw materials - idea
+  raised but deliberately not designed yet, open questions noted as-is
+  rather than guessed at:
+  - Default rule floated: only ever recycle *crafted* items (not raw
+    resources) whose level is comfortably below the character's own -
+    exact threshold not decided.
+  - Exception: never recycle a gathering tool that's still the best
+    available for its skill (e.g. an axe reducing woodcutting time),
+    even if it's low-level - only once a strictly better one (reducing
+    the cooldown further) is actually held/equipped.
+  - Reliability is the open concern (irreversible - unlike every other
+    action this bot takes, a wrong recycle can't be undone), which is
+    exactly why this isn't started yet rather than shipped with a
+    guessed threshold.
 - [ ] Grand Exchange trading
 - [ ] Multi-character boss fights
 - [ ] Discord notifications for notable events (rare drops, task failures)
