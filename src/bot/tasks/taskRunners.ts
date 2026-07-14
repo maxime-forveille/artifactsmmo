@@ -11,16 +11,38 @@ import {
   SUPPORTED_COMBAT_SLOTS,
   type SupportedCombatSlot,
 } from "../gear.js";
-import { materialsNeededFor } from "../materialPlan.js";
-import { findNextFarmableResource, findNextSafeMonster, skillLevel } from "../progression.js";
-import { craftAndEquip } from "../strategies/equipment.js";
+import { heldQuantity } from "../inventory.js";
+import { findCraftableFromBankSurplus, materialsNeededFor } from "../materialPlan.js";
+import {
+  craftSkillLevel,
+  findNextFarmableResource,
+  findNextSafeMonster,
+  skillLevel,
+} from "../progression.js";
+import {
+  craftAndEquip,
+  ensureHeld,
+  type EquipmentError,
+  InsufficientCraftingLevelError,
+} from "../strategies/equipment.js";
 import { runFarmingCycle } from "../strategies/farming.js";
 import { runHuntingCycle } from "../strategies/hunting.js";
 import { runForever } from "./runForever.js";
 
+type CraftSkill = components["schemas"]["CraftSkill"];
 type GatheringSkill = components["schemas"]["GatheringSkill"];
 type Item = components["schemas"]["ItemSchema"];
 type Monster = components["schemas"]["MonsterSchema"];
+
+/**
+ * Tracks the exact `{skill, requiredLevel}` pairs a pending gear upgrade
+ * is blocked on (see `InsufficientCraftingLevelError`), so `runAutoHuntTask`
+ * knows precisely when it's worth re-checking gear again - the moment one
+ * of these thresholds is actually reached - instead of on every minor XP
+ * tick. Keyed by skill; a skill only ever needs its *lowest* still-blocking
+ * required level tracked.
+ */
+type PendingCraftUnlocks = Map<CraftSkill, number>;
 
 export class NoSafeMonsterFoundError extends Error {
   constructor(level: number) {
@@ -77,6 +99,65 @@ const equipIfFree = (
       return okAsync(undefined);
     });
 
+// A filler craft is meant to make *some* progress toward profession XP
+// each cycle, not to bulk-produce everything the bank could theoretically
+// support - findCraftableFromBankSurplus reports the full theoretical
+// amount craftable from the entire bank surplus, which can vastly exceed
+// what fits in the character's inventory at once (found live: a bank
+// holding enough copper_ore for 156 copper_bar, needing ~10 ore each,
+// tried to withdraw ~1,560 copper_ore in one go and failed with
+// InventoryFullError/a real 497 - inventory_max_items is nowhere near
+// that). Kept deliberately small (not just "whatever fits"): this cap
+// only bounds the number of *crafts* attempted, not each recipe's own
+// material-to-output ratio (unknown to this caller), so a small number
+// leaves headroom for recipes that need several raw materials per unit
+// crafted, without needing to know the exact ratio ahead of time. The
+// loop naturally chips away at the rest over subsequent cycles.
+const MAX_FILLER_CRAFT_BATCH = 5;
+
+/**
+ * Crafts a small batch of whatever's currently craftable from the bank's
+ * surplus (see `findCraftableFromBankSurplus` and `MAX_FILLER_CRAFT_BATCH`),
+ * purely for the profession XP - used as a filler activity when a
+ * specific upgrade is blocked by `InsufficientCraftingLevelError`, so the
+ * character makes some progress toward unlocking it instead of just
+ * idling on the block. A no-op when nothing is currently craftable from
+ * surplus (falls back to hunting as normal; it'll be retried on the next
+ * check). Uses `ensureHeld` rather than `craftAndEquip` since filler
+ * items aren't necessarily equippable (e.g. cooking output). Failures are
+ * logged and swallowed, same as every other auto-equip path.
+ */
+const craftFromBankSurplus = (
+  client: ArtifactsClient,
+  characterName: string,
+  agent: CharacterAgent,
+): ResultAsync<void, never> =>
+  findCraftableFromBankSurplus(client, agent.getCharacter())
+    .andThen((craftable) =>
+      craftable.reduce<ResultAsync<void, EquipmentError>>(
+        (acc, { craftableQuantity, itemCode }) =>
+          acc.andThen(() => {
+            const quantity = Math.min(craftableQuantity, MAX_FILLER_CRAFT_BATCH);
+
+            logger.info(
+              { character: characterName, item: itemCode, quantity },
+              `${characterName}: crafting ${quantity}x ${itemCode} from bank surplus for profession xp`,
+            );
+            return ensureHeld(
+              client,
+              agent,
+              itemCode,
+              heldQuantity(agent.getCharacter(), itemCode) + quantity,
+            );
+          }),
+        okAsync(undefined),
+      ),
+    )
+    .orElse((error) => {
+      logger.error(error, `${characterName}: failed to craft from bank surplus, continuing`);
+      return okAsync(undefined);
+    });
+
 /**
  * Equips `item`, gathering/hunting/crafting whatever materials are still
  * missing along the way (via `craftAndEquip`), as long as every missing
@@ -88,6 +169,14 @@ const equipIfFree = (
  * level-up) where paying that cost once in a while is worth it - using it
  * at a checkpoint that fires every cycle (like the per-target weapon
  * check) would mean a costly detour far too often.
+ *
+ * When blocked by `InsufficientCraftingLevelError` (the crafting-skill
+ * level, not a missing material), records the exact `{skill,
+ * requiredLevel}` it's waiting on in `pendingCraftUnlocks` - so
+ * `runAutoHuntTask` knows precisely when it's worth checking gear again
+ * (see `PendingCraftUnlocks`) - and crafts from bank surplus in the
+ * meantime (`craftFromBankSurplus`) so the character makes some progress
+ * toward that profession level instead of idling on the block.
  *
  * Known v1 simplification: doesn't weigh *how much* is missing before
  * committing (no quantity cap) - a static numeric threshold would be
@@ -102,6 +191,7 @@ const equipWorthwhileUpgrade = (
   agent: CharacterAgent,
   item: Item,
   context: string,
+  pendingCraftUnlocks: PendingCraftUnlocks,
 ): ResultAsync<void, never> =>
   materialsNeededFor(client, agent.getCharacter(), item.code, 1)
     .andThen((missing) => {
@@ -125,6 +215,26 @@ const equipWorthwhileUpgrade = (
       return craftAndEquip(client, agent, item.code);
     })
     .orElse((error) => {
+      if (error instanceof InsufficientCraftingLevelError) {
+        const currentlyTracked = pendingCraftUnlocks.get(error.skill);
+
+        if (currentlyTracked === undefined || error.requiredLevel < currentlyTracked) {
+          pendingCraftUnlocks.set(error.skill, error.requiredLevel);
+        }
+
+        logger.info(
+          {
+            character: characterName,
+            item: item.code,
+            requiredLevel: error.requiredLevel,
+            skill: error.skill,
+          },
+          `${characterName}: ${item.code} needs ${error.skill} level ${error.requiredLevel} - crafting from bank surplus for profession xp in the meantime`,
+        );
+
+        return craftFromBankSurplus(client, characterName, agent);
+      }
+
       logger.error(
         error,
         `${characterName}: failed to check/equip ${item.code} for ${context}, continuing with current gear`,
@@ -286,9 +396,17 @@ const equipBestCombatGearIfWorthwhile = (
   agent: CharacterAgent,
   monster: Monster,
   slot: SupportedCombatSlot,
+  pendingCraftUnlocks: PendingCraftUnlocks,
 ): ResultAsync<void, never> =>
   withBestCombatGear(client, characterName, agent, monster, slot, (item) =>
-    equipWorthwhileUpgrade(client, characterName, agent, item, `${slot} gear for ${monster.code}`),
+    equipWorthwhileUpgrade(
+      client,
+      characterName,
+      agent,
+      item,
+      `${slot} gear for ${monster.code}`,
+      pendingCraftUnlocks,
+    ),
   );
 
 /**
@@ -304,11 +422,19 @@ const equipAllCombatGearIfWorthwhile = (
   characterName: string,
   agent: CharacterAgent,
   monster: Monster,
+  pendingCraftUnlocks: PendingCraftUnlocks,
 ): ResultAsync<void, never> =>
   SUPPORTED_COMBAT_SLOTS.reduce<ResultAsync<void, never>>(
     (acc, slot) =>
       acc.andThen(() =>
-        equipBestCombatGearIfWorthwhile(client, characterName, agent, monster, slot),
+        equipBestCombatGearIfWorthwhile(
+          client,
+          characterName,
+          agent,
+          monster,
+          slot,
+          pendingCraftUnlocks,
+        ),
       ),
     okAsync(undefined),
   );
@@ -358,21 +484,25 @@ export const runHuntTask = async (
  * shortly.
  *
  * The other 7 combat slots (armor, shield, ring, amulet) are only
- * re-checked on the task's first cycle and right after the character
- * levels up, not every cycle: their "best" choice changes far less often
- * than the weapon's (which already tracks the current target every
- * cycle), so checking all of them constantly would mean several extra
- * `getItems`/`getItem` calls per cycle for very little benefit most of
- * the time. The first-cycle check matters even for a character who isn't
- * freshly leveling up: without it, whatever level they already happened
- * to be at when this task started would never trigger a future "level
- * increased" comparison, so a fully free upgrade could sit unequipped
- * indefinitely (this happened live). That level-up/first-cycle check
- * (`equipAllCombatGearIfWorthwhile`) also commits to a worthwhile
- * upgrade even when it isn't completely free, as long as every missing
- * material has a known source - the every-cycle weapon check
- * (`equipBestCombatGearIfAvailable`) stays strictly free-only, since
- * paying a gathering/hunting detour that often would be too disruptive.
+ * re-checked on the task's first cycle, right after the character levels
+ * up, or the moment a profession level a pending upgrade was blocked on
+ * (`InsufficientCraftingLevelError`) actually reaches its required
+ * threshold (see `PendingCraftUnlocks`) - not every cycle: their "best"
+ * choice changes far less often than the weapon's (which already tracks
+ * the current target every cycle), so checking all of them constantly
+ * would mean several extra `getItems`/`getItem` calls per cycle for very
+ * little benefit most of the time. The first-cycle check matters even
+ * for a character who isn't freshly leveling up: without it, whatever
+ * level they already happened to be at when this task started would
+ * never trigger a future "level increased" comparison, so a fully free
+ * upgrade could sit unequipped indefinitely (this happened live). That
+ * level-up/first-cycle check (`equipAllCombatGearIfWorthwhile`) also
+ * commits to a worthwhile upgrade even when it isn't completely free, as
+ * long as every missing material has a known source, and crafts from
+ * bank surplus for profession XP when blocked by a crafting-skill level
+ * instead - the every-cycle weapon check (`equipBestCombatGearIfAvailable`)
+ * stays strictly free-only, since paying a gathering/hunting detour that
+ * often would be too disruptive.
  */
 export const runAutoHuntTask = (
   client: ArtifactsClient,
@@ -391,6 +521,7 @@ export const runAutoHuntTask = (
   // sat unequipped indefinitely because the character had already been
   // level 8 since before this check existed).
   let lastGearCheckLevel: number | undefined;
+  const pendingCraftUnlocks: PendingCraftUnlocks = new Map();
 
   return runForever(
     characterName,
@@ -403,15 +534,31 @@ export const runAutoHuntTask = (
           }
 
           const currentLevel = agent.getCharacter().level;
+          const unlockReached = [...pendingCraftUnlocks].some(
+            ([skill, requiredLevel]) =>
+              craftSkillLevel(agent.getCharacter(), skill) >= requiredLevel,
+          );
           const needsGearCheck =
-            lastGearCheckLevel === undefined || currentLevel > lastGearCheckLevel;
+            lastGearCheckLevel === undefined || currentLevel > lastGearCheckLevel || unlockReached;
 
           if (needsGearCheck) {
             lastGearCheckLevel = currentLevel;
+
+            for (const [skill, requiredLevel] of pendingCraftUnlocks) {
+              if (craftSkillLevel(agent.getCharacter(), skill) >= requiredLevel) {
+                pendingCraftUnlocks.delete(skill);
+              }
+            }
           }
 
           const equipGear = needsGearCheck
-            ? equipAllCombatGearIfWorthwhile(client, characterName, agent, monster)
+            ? equipAllCombatGearIfWorthwhile(
+                client,
+                characterName,
+                agent,
+                monster,
+                pendingCraftUnlocks,
+              )
             : equipBestCombatGearIfAvailable(client, characterName, agent, monster, "weapon");
 
           return equipGear.andThen(() => runHuntingCycle(client, agent, monster.code));

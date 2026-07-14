@@ -940,5 +940,296 @@ describe("runTask", () => {
       expect(getBankItems).toHaveBeenCalledWith({ item_code: "new_weapon" });
       expect(equip).not.toHaveBeenCalled();
     });
+
+    it("re-checks every combat slot once a tracked profession-level block is cleared, even without a character level-up", async () => {
+      const monster = buildMonster({ code: "chicken", hp: 60, level: 1 });
+      const blockedWeapon = buildItem({
+        code: "blocked_weapon",
+        craft: {
+          items: [{ code: "iron_ore", quantity: 1 }],
+          level: 5,
+          quantity: 1,
+          skill: "weaponcrafting",
+        },
+        type: "weapon",
+      });
+      const getMonsters = vi.fn(() =>
+        okAsync({ data: [monster], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      const getItems = vi.fn((query?: { type?: string }) =>
+        okAsync({
+          data: query?.type === "weapon" ? [blockedWeapon] : [],
+          page: 1,
+          pages: 1,
+          size: 100,
+          total: query?.type === "weapon" ? 1 : 0,
+        }),
+      );
+      const getItem = vi.fn((code: string) =>
+        code === "blocked_weapon"
+          ? okAsync({ data: blockedWeapon })
+          : okAsync({ data: buildItem({ code }) }),
+      );
+      const getBankItems = vi.fn(() =>
+        okAsync({ data: [], page: 1, pages: 1, size: 50, total: 0 }),
+      );
+      const getResources = vi.fn(() =>
+        okAsync({
+          data: [buildResource({ code: "iron_rocks" })],
+          page: 1,
+          pages: 1,
+          size: 50,
+          total: 1,
+        }),
+      );
+      const getMaps = vi.fn(() => errAsync(new ArtifactsApiError("boom", 500, undefined)));
+      let weaponcraftingLevel = 0;
+      // Always resolves with hp low enough that restIfLow keeps calling
+      // rest() every cycle - deliberately, so this mock's response (and so
+      // weaponcraftingLevel) is re-read on cycle 2 too, simulating the
+      // profession leveling up "off-screen" between checks.
+      const rest = vi.fn(() =>
+        okAsync({
+          data: {
+            character: buildCombatCharacter({
+              attack_earth: 20,
+              hp: 1,
+              level: 4,
+              max_hp: 170,
+              weapon_slot: "",
+              weaponcrafting_level: weaponcraftingLevel,
+            }),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            hp_restored: 0,
+          },
+        }),
+      );
+      const client = buildFakeClient({
+        getBankItems,
+        getCharacter: () =>
+          okAsync({
+            data: buildCombatCharacter({
+              attack_earth: 20,
+              hp: 1,
+              level: 4,
+              max_hp: 170,
+              weapon_slot: "",
+              weaponcrafting_level: 0,
+            }),
+          }),
+        getItem,
+        getItems,
+        getMaps,
+        getMonsters,
+        getResources,
+        rest,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      // Cycle 1: first-cycle full scan hits InsufficientCraftingLevelError
+      // for the weapon slot (weaponcrafting_level 0 < 5) and records it as a
+      // pending unlock. The hunting cycle itself then fails (getMaps
+      // errors), so runForever waits its retry delay before cycle 2.
+      await vi.advanceTimersByTimeAsync(0);
+      const weaponChecksInCycle1 = getItems.mock.calls.filter(([q]) => q?.type === "weapon").length;
+      expect(weaponChecksInCycle1).toBe(1);
+
+      getItems.mockClear();
+      weaponcraftingLevel = 5; // the character's profession leveled up "off-screen"
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      const sortStrings = (a: string | undefined, b: string | undefined) =>
+        (a ?? "").localeCompare(b ?? "");
+      const queriedTypesCycle2 = getItems.mock.calls.map(([q]) => q?.type).sort(sortStrings);
+      expect(queriedTypesCycle2).toEqual(
+        ["amulet", "body_armor", "boots", "helmet", "leg_armor", "ring", "shield", "weapon"].sort(
+          sortStrings,
+        ),
+      );
+    });
+
+    it("crafts only a small capped batch from bank surplus for profession xp, not the full theoretical amount", async () => {
+      const held = new Map<string, number>();
+      const buildLeveledCharacter = (): CharacterSnapshot =>
+        buildCombatCharacter({
+          attack_earth: 20,
+          hp: 170,
+          inventory: [...held.entries()].map(([code, quantity], index) => ({
+            code,
+            quantity,
+            slot: index,
+          })),
+          level: 5,
+          map_id: 1,
+          max_hp: 170,
+          mining_level: 5,
+          weapon_slot: "",
+          weaponcrafting_level: 0,
+        });
+      const monster = buildMonster({ code: "chicken", hp: 60, level: 1 });
+      const blockedWeapon = buildItem({
+        code: "blocked_weapon",
+        craft: {
+          items: [{ code: "iron_ore", quantity: 1 }],
+          level: 5,
+          quantity: 1,
+          skill: "weaponcrafting",
+        },
+        type: "weapon",
+      });
+      const copperBar = buildItem({
+        code: "copper_bar",
+        craft: {
+          items: [{ code: "copper_ore", quantity: 10 }],
+          level: 1,
+          quantity: 1,
+          skill: "mining",
+        },
+        type: "resource",
+      });
+      const getMonsters = vi.fn(() =>
+        okAsync({ data: [monster], page: 1, pages: 1, size: 50, total: 1 }),
+      );
+      const rest = vi.fn(() =>
+        okAsync({
+          data: {
+            character: buildLeveledCharacter(),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            hp_restored: 169,
+          },
+        }),
+      );
+      const getItems = vi.fn((query?: { type?: string }) =>
+        okAsync({
+          data: query?.type === "weapon" ? [blockedWeapon] : [],
+          page: 1,
+          pages: 1,
+          size: 100,
+          total: query?.type === "weapon" ? 1 : 0,
+        }),
+      );
+      const getItem = vi.fn((code: string) => {
+        if (code === "copper_bar") {
+          return okAsync({ data: copperBar });
+        }
+        if (code === "blocked_weapon") {
+          return okAsync({ data: blockedWeapon });
+        }
+        // Every other code (iron_ore, copper_ore, ...) is a plain raw
+        // material with no craft recipe of its own.
+        return okAsync({ data: buildItem({ code }) });
+      });
+      const getBankItems = vi.fn((query?: { item_code?: string }) => {
+        if (query?.item_code === undefined) {
+          return okAsync({
+            data: [{ code: "copper_ore", quantity: 1_560 }],
+            page: 1,
+            pages: 1,
+            size: 100,
+            total: 1,
+          });
+        }
+        if (query.item_code === "copper_ore") {
+          return okAsync({
+            data: [{ code: "copper_ore", quantity: 1_560 }],
+            page: 1,
+            pages: 1,
+            size: 50,
+            total: 1,
+          });
+        }
+        return okAsync({ data: [], page: 1, pages: 1, size: 50, total: 0 });
+      });
+      const getItemsForSurplus = vi.fn((query?: { craft_material?: string; type?: string }) => {
+        if (query?.craft_material === "copper_ore") {
+          return okAsync({ data: [copperBar], page: 1, pages: 1, size: 100, total: 1 });
+        }
+        return getItems(query);
+      });
+      const getResources = vi.fn(() =>
+        okAsync({
+          data: [buildResource({ code: "iron_rocks" })],
+          page: 1,
+          pages: 1,
+          size: 50,
+          total: 1,
+        }),
+      );
+      const getMaps = vi.fn(() =>
+        okAsync({
+          data: [{ ...({} as MapSchema), map_id: 2 }],
+          page: 1,
+          pages: 1,
+          size: 50,
+          total: 1,
+        }),
+      );
+      const moveCharacter = vi.fn(() =>
+        okAsync({
+          data: {
+            character: buildLeveledCharacter(),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            destination: { ...({} as MapSchema), map_id: 2 },
+            path: [],
+          },
+        }),
+      );
+      const withdrawItems = vi.fn((_name: string, items: { code: string; quantity: number }[]) => {
+        for (const item of items) {
+          held.set(item.code, (held.get(item.code) ?? 0) + item.quantity);
+        }
+        return okAsync({
+          data: {
+            bank: [],
+            character: buildLeveledCharacter(),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            items: [],
+          },
+        });
+      });
+      const craft = vi.fn((_name: string, code: string, quantity = 1) => {
+        held.set("copper_ore", (held.get("copper_ore") ?? 0) - 10 * quantity);
+        held.set(code, (held.get(code) ?? 0) + quantity);
+        return okAsync({
+          data: {
+            character: buildLeveledCharacter(),
+            cooldown: buildCooldown("2024-01-01T00:00:00.000Z"),
+            details: { items: [], xp: 1 },
+          },
+        });
+      });
+      const client = buildFakeClient({
+        craft,
+        getBankItems,
+        getCharacter: () =>
+          okAsync({
+            data: buildCombatCharacter({
+              attack_earth: 20,
+              hp: 1,
+              level: 4,
+              map_id: 1,
+              max_hp: 170,
+              mining_level: 5,
+              weapon_slot: "",
+              weaponcrafting_level: 0,
+            }),
+          }),
+        getItem,
+        getItems: getItemsForSurplus,
+        getMaps,
+        getMonsters,
+        getResources,
+        moveCharacter,
+        rest,
+        withdrawItems,
+      });
+
+      void runTask(client, "Cartman", { type: "autoHunt" });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(craft).toHaveBeenCalledWith("Cartman", "copper_bar", 5);
+      expect(craft).not.toHaveBeenCalledWith("Cartman", "copper_bar", 156);
+    });
   });
 });

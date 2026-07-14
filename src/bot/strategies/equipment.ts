@@ -376,8 +376,14 @@ const ensureHeldItem = (
  *    first, then crafts enough copies at the matching workshop.
  *  - otherwise, treats it as a raw resource drop: finds which resource node
  *    produces it, moves there, and gathers until enough is held.
+ *
+ * Unlike `craftAndEquip`, this never touches equipment slots - it's the
+ * right entry point for crafting an item purely for its own sake (e.g. a
+ * cooking recipe crafted only for the profession XP it grants), which
+ * `craftAndEquip` can't do since it requires an equip slot to exist for
+ * the item's type at all.
  */
-const ensureHeld = (
+export const ensureHeld = (
   client: EquipmentClient,
   agent: EquipmentAgent,
   itemCode: string,
