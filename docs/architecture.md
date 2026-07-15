@@ -131,6 +131,13 @@ reserved, excludes busy characters, and otherwise proposes one `farmResource`
 Activity for the strongest eligible gatherer. The exact resource remains an
 explicit planning input until source-selection policy is designed.
 
+`orchestration/activityLifecycle.ts` owns the pure Reservation transitions. A
+successfully started Activity is promoted from a proposal to a Reservation only
+if its Goal still exists and its character is idle. A completed, blocked, or
+cancelled Activity releases only that character's Reservation while preserving
+all Goals for the next snapshot and policy decision. Transient Failures bypass
+the terminal transition so the runtime can retry the same reserved Activity.
+
 The final orchestrator will emit Activities instead of `autoXXX` tasks.
 Persistent Goals will survive across several Activities while Reservations
 record work already in flight.
