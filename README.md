@@ -163,9 +163,11 @@ project source - same treatment as `.env`.
   every task cycle (across all 5 characters, many times an hour with the
   `autoHunt`/gear-check paths added recently) only ate into the account's
   hourly GET rate limit for no benefit - confirmed live via real 429s
-  against the server's own "2000 per 1 hour" bucket. `getCharacter`,
-  `getCharacterLogs`, and `getBankItems` are deliberately left uncached -
-  their data is genuinely dynamic. Only successful results are cached; a
+  against the server's own "2000 per 1 hour" bucket. Dynamic reads use
+  shorter-lived caching instead: character logs are shared for 2 minutes
+  (their XP/s data is only a heuristic), and bank reads for 5 seconds with
+  immediate invalidation after a successful deposit or withdrawal.
+  `getCharacter` remains uncached. Only successful results are cached; a
   failed attempt is evicted immediately so the next call retries for real.
 - **`CharacterAgent`** (`src/bot/characters/characterAgent.ts`) — wraps the
   client for one character: waits out cooldowns automatically, tracks
@@ -234,21 +236,16 @@ pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenA
   implemented.
 - **Discord notifications** — `DISCORD_WEBHOOK_URL`/`ENABLE_NOTIFICATIONS`
   are validated as env vars but nothing sends notifications yet.
-- **No automatic "go level up that profession" follow-up when a craft's
-  skill level isn't met yet** — `ensureHeldItem` (`strategies/equipment.ts`)
-  now checks the character's actual crafting-skill level
-  (`weaponcrafting_level`, `gearcrafting_level`, `jewelrycrafting_level`,
-  ..., via `craftSkillLevel` in `progression.ts`) against `item.craft.level`
-  _before_ gathering a single material, failing fast with a dedicated
-  `InsufficientCraftingLevelError` instead of wasting a real `craft` API
-  call that was always going to fail. What's still missing is the
-  follow-up: the eventual answer isn't just "skip this upgrade", it's
-  "go level up that profession first" - which needs the cross-character
-  orchestrator (see "Cross-character orchestration" below) to be able to
-  temporarily send a character into a farming/crafting-practice loop for
-  the right skill, then come back to the upgrade once it's unlocked.
-  Deliberately left as a known gap until that orchestration foundation
-  exists.
+- **Profession progression is targeted but still heuristic and
+  single-character** — when an upgrade is blocked by
+  `InsufficientCraftingLevelError`, `autoHunt` now persists the exact
+  `{skill, targetLevel}` goal, selects an eligible recipe for that profession,
+  gathers or hunts its missing safe materials, and performs one bounded craft
+  per cycle until the threshold is reached. Recipe choice currently prefers
+  the fewest missing material units, then the highest recipe level; it has no
+  observed crafting XP/second data yet, and cannot delegate material work to
+  another character. That richer optimization needs the cross-character
+  orchestrator described below.
 - **No cost/risk weighing for a "known" material source, only
   exists/doesn't** — `materialsNeededFor`'s `source` classification (see
   "Automated progression decisions" below) only ever says a raw material
@@ -272,13 +269,6 @@ pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenA
   removes most of the _demand_ that led to this, but doesn't fix the
   underlying blind spot; persisting the limiter's state across restarts
   (ties into the SQLite idea already noted for other reasons) would.
-- **`observedMonsterXpRates` re-fetches 100 log entries every `autoHunt`
-  cycle, per character** — this data is genuinely dynamic (unlike the now-
-  cached catalogs above), so it can't just be memoized forever, but
-  re-fetching a large page on every single cycle - rather than on some
-  looser cadence, since XP/s only meaningfully changes after an actual
-  fight resolves - is still a real, not-yet-addressed contributor to GET
-  volume. Noted here, not fixed yet.
 
 ## Roadmap
 
@@ -389,26 +379,25 @@ Recently delivered (see git log for details):
   `InsufficientCraftingLevelError` instead of wasting a `craft` API call
   that was always going to fail - added proactively right after the
   `UnsafeMonsterError` fix above, once the same "known source, but not
-  actually usable yet" shape was spotted (see "Known Limitations" for
-  what's still open: this only skips the upgrade, it doesn't yet go
-  level up the profession).
+  actually usable yet" shape was spotted. `autoHunt` now turns this error
+  into a persistent targeted profession goal rather than only skipping the
+  upgrade.
 - ✅ Static-catalog caching (`src/client/memoize.ts`) for `getItems`,
   `getItem`, `getMonsters`, `getMonster`, `getResources`, `getResource`,
   `getMaps` - this game content never changes while the bot runs, but
   every task cycle across all 5 characters was re-fetching the exact
   same queries for no benefit, confirmed live via real 429s against the
   account's hourly GET limit.
-- ✅ `runAutoHuntTask` now follows a full priority cascade for
-  hunt/craft/gather instead of just logging a blocked upgrade: when a
-  gear upgrade is blocked by `InsufficientCraftingLevelError`, it crafts
-  from bank surplus for profession XP in the meantime
-  (`craftFromBankSurplus`), and tracks the exact `{skill, requiredLevel}`
-  it's waiting on to re-check gear the moment that threshold is actually
-  reached (see "Automated progression decisions" below). Ships with a
-  live-found fix of its own: filler crafts are capped to a small batch
-  (`MAX_FILLER_CRAFT_BATCH`) rather than the full theoretical amount
-  `findCraftableFromBankSurplus` reports, which could vastly exceed a
-  character's inventory capacity.
+- ✅ Dynamic GET pressure reduced after another live hourly 429: character
+  logs are cached for 2 minutes, bank reads for 5 seconds with invalidation
+  after mutations, and failed reads remain immediately retryable.
+- ✅ `runAutoHuntTask` now follows a persistent priority cascade for
+  hunt/craft/gather instead of just logging a blocked upgrade: when a gear
+  upgrade is blocked by `InsufficientCraftingLevelError`, it tracks the exact
+  `{skill, requiredLevel}` goal, selects an eligible recipe for that same
+  profession (`planProfessionProgress`), gathers or safely hunts one craft's
+  missing materials, and repeats one bounded craft per cycle until the
+  threshold is reached. It then re-checks gear and resumes hunting.
 
 Up next (not yet started, roughly in order of likely value - see point 7
 under "Automated progression decisions" for the full staged plan):
@@ -675,26 +664,22 @@ combine` - safe here since it's read-only, unlike the action
      failing fast instead of wasting a `craft` call that was always going
      to fail - added proactively once the same "known source, but not
      actually usable yet" shape was spotted, right after the safety fix.
-     See "Known Limitations" for what's still missing here: the check
-     stops at "skip it", it doesn't yet go level up the profession first.
-   - ✅ **Near-term - sensing for craft-as-a-profession (detection only,
-     not wired into any task yet).** `findCraftableFromBankSurplus`
-     (`src/bot/materialPlan.ts`) is the mirror image of
-     `materialsNeededFor`: given the bank's contents, it finds items the
-     character could craft _right now_ without gathering or hunting
-     anything more, and - unlike every other gear-upgrade path in this
-     codebase (see "Known Limitations") - it actually checks the
-     character's crafting-skill level (`weaponcrafting_level`,
-     `gearcrafting_level`, ...) against the recipe's `craft.level`
-     requirement, since that check is the whole point of this function.
-     For each material code found in the bank, it looks up which items
-     consume it (`getItems`'s `craft_material` filter - the mirror of
-     `findResourceForDrop`'s `drop` filter), deduplicates candidates
-     surfaced by more than one surplus material, and reports how many
-     units of each are craftable from what's already held or banked.
-     Read-only, like `materialsNeededFor` and `findCombatGearUpgrades` -
-     wiring it into an actual task (crafting for profession XP, not just
-     combat gear) is the next piece.
+     The targeted profession progression below now consumes this error as a
+     goal instead of stopping at "skip it".
+   - ✅ **Near-term - targeted craft-as-a-profession progression.**
+     `planProfessionProgress` (`src/bot/materialPlan.ts`) receives the exact
+     `{skill, targetLevel}` blocking an upgrade, filters recipes to that skill
+     and the character's current profession level, and evaluates one craft of
+     each through `materialsNeededFor`. It rejects unknown or unsafe sources,
+     prefers recipes already covered by inventory/bank, then the fewest
+     missing material units, using recipe level only as a tie-breaker until
+     observed crafting XP rates exist. `runAutoHuntTask` persists pending
+     goals and executes one selected craft per cycle through `craftItem`,
+     which gathers/hunts/crafts materials recursively but always performs the
+     target craft itself instead of withdrawing a banked output. Once the
+     target profession level is reached, the full gear scan runs again and
+     hunting resumes. `findCraftableFromBankSurplus` remains available as the
+     broader read-only "what can the bank make?" sensing query.
    - 🎯 **Target, longer-term - noted but no infrastructure yet:**
      - Real cross-family arbitration (hunt vs farm _as an ongoing choice_,
        not just a one-off material fetch) - blocked on not having a
@@ -708,7 +693,7 @@ combine` - safe here since it's read-only, unlike the action
        webhook/push mechanism instead of polling (same item as above,
        restated here as part of the staged plan).
 
-8. **A priority cascade for hunt/craft/gather (single character).**
+8. ✅ **A priority cascade for hunt/craft/gather (single character).**
    Rather than a numeric value-comparison model (which would need a
    gathering XP/second rate comparable to `observedMonsterXpRates` -
    still missing, see point 7's target list), `runAutoHuntTask` now
@@ -720,49 +705,24 @@ combine` - safe here since it's read-only, unlike the action
       divert to it: gather/hunt whatever's missing (`equipWorthwhileUpgrade`),
       then resume hunting.
    3. If that upgrade is blocked by `InsufficientCraftingLevelError`
-      (the character's crafting-skill level, not the item's equip
-      level), divert instead into crafting whatever
-      `findCraftableFromBankSurplus` currently finds (`craftFromBankSurplus`)
-      - opportunistic, already-available profession XP, rather than a
-        new "craft something, anything, just for the XP" mechanic. If
-        surplus has nothing craftable either, fall back to hunting and
-        simply retry later.
-   4. Closes the loop: the exact `{skill, requiredLevel}` pairs seen in
-      step 3's `InsufficientCraftingLevelError`s are tracked
-      (`PendingCraftUnlocks`), and the full 8-slot gear scan re-runs not
-      only on a character level-up (as before) but also the moment any
-      tracked profession level actually reaches its recorded target -
-      not on every minor XP tick, only when a specific known block is
-      actually cleared.
-      `ensureHeld` (`strategies/equipment.ts`, previously private) is now
-      exported for step 3 - it already does "obtain N of this item by
-      whatever means, without equipping", needed since filler items aren't
-      necessarily equippable (e.g. cooking output), which `craftAndEquip`
-      can't handle (it requires an equip slot to exist at all). Everything
-      else composes signals that already existed (`findCombatGearUpgrades`,
-      `materialsNeededFor`, `InsufficientCraftingLevelError`,
-      `findCraftableFromBankSurplus`, `craftSkillLevel`) - no new sensing
-      was needed.
+      (the character's crafting-skill level, not the item's equip level),
+      persist its exact `{skill, requiredLevel}` as a profession goal.
+   4. On subsequent cycles, `planProfessionProgress` selects one currently
+      eligible recipe for that exact skill. Inventory/bank-covered recipes
+      come first; otherwise it may gather or safely hunt known materials.
+      `craftItem` performs one bounded target craft so the action always
+      grants XP in the intended profession.
+   5. The full 8-slot gear scan re-runs the moment the tracked profession
+      reaches its target, then the character equips the unlocked upgrade and
+      resumes hunting. If no safe eligible profession recipe exists, hunting
+      remains the fallback instead of leaving the character idle.
 
-   Bug found live during rollout: `findCraftableFromBankSurplus` reports
-   the full theoretical amount craftable from the _entire_ bank surplus
-   (by design - see point 7's description of it), which can vastly
-   exceed what fits in a character's inventory at once - a bank holding
-   enough raw material for 156 crafts tried to withdraw all of it in one
-   go and failed outright (`InventoryFullError`, then a real 497 - no
-   inventory is anywhere near that large). A filler craft is meant to
-   make _some_ progress each cycle, not bulk-produce everything the bank
-   could theoretically support, so `craftFromBankSurplus` now caps each
-   attempt to `MAX_FILLER_CRAFT_BATCH` (5) crafts - deliberately small
-   and not derived from the recipe's own material-to-output ratio
-   (unknown to this caller), so it stays inventory-safe for recipes
-   needing several raw materials per unit regardless of how large the
-   surplus is. The loop chips away at the rest over subsequent cycles.
-   A secondary, cascading symptom from the same incident: all 5
-   characters attempting this simultaneously briefly exhausted the
-   account's per-minute GET rate limit, causing unrelated gear checks to
-   fail with real 429s too - resolved by the same root-cause fix, not a
-   separate one.
+   Earlier rollout incidents shaped the final bounded design: using the full
+   theoretical bank-surplus quantity attempted 156 crafts at once and hit a
+   real inventory-full 497; processing several recipes for all 5 characters
+   then contributed to real minute/hour 429s. Profession progression now
+   executes exactly one target craft per cycle, while client TTL caches
+   collapse repeated log and bank reads.
 
 ### Cross-character orchestration (target architecture, not started)
 
