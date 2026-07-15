@@ -19,7 +19,7 @@ export type ActivityPlanner<EPlan extends Error> = (
   state: OrchestratorState,
 ) => Result<ActivityPlan, EPlan>;
 
-type ActivityStarter<EActivity extends Error> = (
+export type ActivityStarter<EActivity extends Error> = (
   state: OrchestratorState,
   assignment: ActivityAssignment<ExecutableActivity>,
 ) => Result<LaunchedActivity<EActivity>, StartActivityError>;

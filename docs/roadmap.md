@@ -84,7 +84,8 @@ new orchestration Interface.
 - [x] Schedule only idle characters.
 - [x] Keep in-flight Reservations visible to policy.
 - [x] Retry Transient Failures without invoking policy again.
-- [ ] Return Blockers to policy with their Goal preserved.
+- [x] Return Blockers to policy with their Goal preserved.
+- [ ] Retry failed Crew Snapshot refreshes before replanning.
 
 ### 4. Extract existing automatic decisions
 

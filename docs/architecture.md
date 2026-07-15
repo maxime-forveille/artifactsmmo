@@ -79,6 +79,13 @@ assignment against the state produced by the preceding start. Whole-plan
 validation prevents malformed multi-Activity proposals from starting only a
 prefix before discovering a duplicate character or missing Goal.
 
+`runtime/rollingActivityCoordinator.ts` connects scheduling, launching, terminal
+processing, and snapshot refresh in one serialized rolling loop. Existing
+Activities remain concurrent; each terminal outcome refreshes observation and
+re-enters policy with its Blocker details before the next queued outcome is
+handled. Expected and unexpected asynchronous failures are reported without
+leaving stale Reservations in runtime state.
+
 `runtime/taskSupervisor.ts` currently supervises long-running tasks with one
 `AbortController` per character. Its useful behavior should survive the
 migration:
