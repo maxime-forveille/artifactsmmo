@@ -12,6 +12,7 @@ stryker.log
 
 tasks.json
 !tasks.example.json
+orchestration.json
 
 logs/
 *.log

@@ -99,6 +99,8 @@ new orchestration Interface.
 
 ### 5. Assignment sources
 
+- [x] Validate explicit orchestration Goals and resource mappings.
+- [ ] Resolve configured resources before runtime startup.
 - [ ] Move assignment vocabulary out of `utils/`.
 - [ ] Keep `tasks.json` as a human Adapter during migration.
 - [ ] Make the orchestrator the default assignment source once proven.

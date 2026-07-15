@@ -215,6 +215,13 @@ orchestrator is built. The target is autonomous assignment with a temporary
 one-shot human override that takes precedence and then returns control to the
 orchestrator.
 
+`utils/orchestrationConfig.ts` validates the separate future orchestration
+configuration with Valibot. Goal priority, bank thresholds, and resource codes
+must all be explicit; the Adapter neither supplies defaults nor copies
+resource-only fields into persistent orchestrator state. `orchestration.json`
+is account runtime configuration and remains ignored until the orchestrator is
+connected to the entrypoint.
+
 The assignment vocabulary currently lives in `utils/taskAssignments.ts` with
 Valibot parsing and filesystem loading. A later refactor should move bot-domain
 assignment types near orchestration while keeping JSON/filesystem concerns in
