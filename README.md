@@ -209,9 +209,11 @@ project source - same treatment as `.env`.
   performs no assignment or game action yet.
 - **Crew policy producer** (`src/bot/crewPolicy.ts`) — applies a pure policy to
   every character with access to the complete shared snapshot and returns
-  proposed `TaskAssignment[]`. Its conservative default keeps combat
-  progression running through `autoHunt`; proposals are not executed yet.
-- **Tests** — 190+ Vitest tests (dependency-injected fakes/neverthrow, no real
+  proposed `TaskAssignment[]`. Its first concrete rule detects an explicit
+  bank shortage and sends the strongest eligible gatherer to the exact
+  resource while everyone else keeps progressing through `autoHunt`;
+  proposals are not executed yet.
+- **Tests** — 200+ Vitest tests (dependency-injected fakes/neverthrow, no real
   network except `tests/client.test.ts`, which uses MSW for HTTP-contract
   tests).
 
@@ -428,6 +430,13 @@ Recently delivered (see git log for details):
   `src/bot/crewPolicy.ts`): applies a policy once per character while exposing
   the full shared snapshot to every decision. Its explicit baseline proposes
   `autoHunt` for everyone; nothing consumes or executes the proposal yet.
+- ✅ First cross-character rule (`proposeResourceReplenishment`): when an
+  explicit bank target is below its minimum, select the eligible character
+  with the highest matching gathering-skill level and propose `farm` for the
+  exact resource. Other characters remain on `autoHunt`; once the threshold
+  is met, the gatherer does too. This intentionally uses fixed `farm`, not
+  `autoFarm`, because the latter may pick a higher-level node that does not
+  produce the missing item.
 
 Up next (not yet started, roughly in order of likely value - see point 7
 under "Automated progression decisions" for the full staged plan):
@@ -781,11 +790,14 @@ per-character work, with the first observational slice now delivered:
    `taskSupervisor.ts` mechanism that already exists (today fed by a human
    editing `tasks.json`) - not a new execution model.
    `proposeCrewAssignments` now provides the pure snapshot-to-proposal
-   boundary, with `autoHunt` as a conservative baseline. It is deliberately
-   not connected to `reconcileTasks` yet. Each character will keep running
-   its own `runTask`/`runForever` loop, oblivious to the orchestrator; it will
-   just receive a different task from time to time, exactly like a human
-   editing `tasks.json` does today.
+   boundary, with `autoHunt` as a conservative baseline. The first concrete
+   rule, `proposeResourceReplenishment`, can divert the strongest eligible
+   gatherer to a fixed resource until an explicit bank threshold is reached.
+   It handles one target at a time and is deliberately not connected to
+   `reconcileTasks` yet. Each character will keep running its own
+   `runTask`/`runForever` loop, oblivious to the orchestrator; it will just
+   receive a different task from time to time, exactly like a human editing
+   `tasks.json` does today.
 3. Once proven, the orchestrator is expected to become the sole source of
    assignments - `tasks.json` (the human-edited one) fades out as the
    bot's autonomy grows. One exception planned: a one-shot, explicit
