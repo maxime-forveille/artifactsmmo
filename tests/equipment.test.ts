@@ -1,10 +1,10 @@
 import { errAsync, okAsync } from "neverthrow";
 import { describe, expect, it, vi } from "vitest";
 
+import { InsufficientCraftingLevelError } from "../src/bot/activities/crafting.js";
 import {
   craftAndEquip,
   craftItem,
-  InsufficientCraftingLevelError,
   UnsafeMonsterError,
   UnsupportedEquipSlotError,
 } from "../src/bot/activities/equipment.js";

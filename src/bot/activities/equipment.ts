@@ -3,6 +3,7 @@ import { errAsync, okAsync, type ResultAsync } from "neverthrow";
 import type { ArtifactsApiError, ArtifactsClient } from "../../client/index.js";
 import type { components } from "../../client/schema.js";
 import { logger } from "../../utils/logger.js";
+import { InsufficientCraftingLevelError, NotCraftableItemError } from "./crafting.js";
 import type { CharacterAgent } from "../runtime/characterAgent.js";
 import { fightSafely, isSafeToFight } from "../combat.js";
 import { EQUIP_SLOT_BY_ITEM_TYPE, equippedItemInSlot, SLOT_FIELD } from "../gear.js";
@@ -18,7 +19,6 @@ import {
   ResourceNotFoundError,
 } from "../world.js";
 
-type CraftSkill = components["schemas"]["CraftSkill"];
 type EquipSlot = components["schemas"]["ItemSlot"];
 type Item = components["schemas"]["ItemSchema"];
 
@@ -48,27 +48,6 @@ export class UnsafeMonsterError extends Error {
       `Fighting "${monsterCode}" for "${itemCode}" isn't safe with the character's current gear`,
     );
     this.name = "UnsafeMonsterError";
-  }
-}
-
-export class NotCraftableItemError extends Error {
-  constructor(public readonly itemCode: string) {
-    super(`Item "${itemCode}" has no crafting recipe`);
-    this.name = "NotCraftableItemError";
-  }
-}
-
-export class InsufficientCraftingLevelError extends Error {
-  constructor(
-    public readonly itemCode: string,
-    public readonly skill: CraftSkill,
-    public readonly requiredLevel: number,
-    public readonly currentLevel: number,
-  ) {
-    super(
-      `Crafting "${itemCode}" needs ${skill} level ${requiredLevel}, but the character is only level ${currentLevel}`,
-    );
-    this.name = "InsufficientCraftingLevelError";
   }
 }
 

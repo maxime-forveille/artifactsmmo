@@ -6,6 +6,7 @@ import type { components } from "../src/client/schema.js";
 
 type Character = components["schemas"]["CharacterSchema"];
 type Cooldown = components["schemas"]["CooldownSchema"];
+type Item = components["schemas"]["ItemSchema"];
 type Map = components["schemas"]["MapSchema"];
 type MapPage = components["schemas"]["StaticDataPage_MapSchema_"];
 type MapQuery = { content_code?: string; content_type?: string };
@@ -20,6 +21,7 @@ const buildCharacter = (): Character => ({
   inventory_max_items: 20,
   max_hp: 100,
   name: "Stan",
+  weaponcrafting_level: 5,
 });
 
 const buildCooldown = (): Cooldown => ({
@@ -46,8 +48,17 @@ const buildDependencies = () => {
     okAsync(buildPage(query.content_type === "bank" ? BANK_MAP_ID : TARGET_MAP_ID)),
   );
 
+  const item = {
+    ...({} as Item),
+    code: "copper_dagger",
+    craft: { items: [], level: 5, quantity: 1, skill: "weaponcrafting" as const },
+  };
+
   return {
     agent: {
+      craft: vi.fn(() =>
+        okAsync({ character, cooldown: buildCooldown(), details: { items: [], xp: 10 } }),
+      ),
       depositItems: vi.fn(() =>
         okAsync({ bank: [], character, cooldown: buildCooldown(), items: [] }),
       ),
@@ -57,12 +68,31 @@ const buildDependencies = () => {
       moveTo: vi.fn(() => okAsync(undefined)),
       rest: vi.fn(),
     },
-    client: { getMaps },
+    client: { getItem: vi.fn(() => okAsync({ data: item })), getMaps },
     getMaps,
   };
 };
 
 describe("runActivity", () => {
+  it("dispatches craftItem to one targeted craft", async () => {
+    const { agent, client, getMaps } = buildDependencies();
+
+    const result = await runActivity(client, agent, {
+      itemCode: "copper_dagger",
+      quantity: 2,
+      type: "craftItem",
+    });
+
+    expect(result.isOk()).toBe(true);
+    expect(getMaps).toHaveBeenCalledWith({
+      content_code: "weaponcrafting",
+      content_type: "workshop",
+    });
+    expect(agent.craft).toHaveBeenCalledWith("copper_dagger", 2);
+    expect(agent.gather).not.toHaveBeenCalled();
+    expect(agent.fight).not.toHaveBeenCalled();
+  });
+
   it("dispatches farmResource to one farming cycle with the resource code", async () => {
     const { agent, client, getMaps } = buildDependencies();
 

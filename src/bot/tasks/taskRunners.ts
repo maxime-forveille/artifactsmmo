@@ -22,11 +22,8 @@ import {
   findNextSafeMonster,
   skillLevel,
 } from "../progression.js";
-import {
-  craftAndEquip,
-  craftItem,
-  InsufficientCraftingLevelError,
-} from "../activities/equipment.js";
+import { InsufficientCraftingLevelError } from "../activities/crafting.js";
+import { craftAndEquip, craftItem } from "../activities/equipment.js";
 import { runFarmingCycle } from "../activities/farming.js";
 import { runHuntingCycle } from "../activities/hunting.js";
 import { runForever } from "./runForever.js";

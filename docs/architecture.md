@@ -58,9 +58,9 @@ seeded directly from the initial Crew Snapshot, avoiding one duplicate character
 read per crew member at startup.
 
 `runtime/activityDispatcher.ts` executes one already-selected bounded Activity
-with an existing Character Agent. It currently dispatches `farmResource` and
-`huntMonster` to their existing cycles; scheduling, Reservations, retry, and
-policy remain outside the dispatcher.
+with an existing Character Agent. It dispatches `farmResource` and `huntMonster`
+to their existing cycles and `craftItem` to targeted crafting; scheduling,
+Reservations, retry, and policy remain outside the dispatcher.
 
 `runtime/activityLauncher.ts` atomically reserves an idle character and starts
 one dispatched Activity. It retries failures classified as transient without
@@ -130,16 +130,16 @@ Activities are complete operational cycles, not individual game Actions:
 
 - `farmResource`: move, gather until full, then bank;
 - `huntMonster`: move, fight/rest until full, then bank;
-- `craftItem`: prepare for and perform one targeted craft;
+- `craftItem`: validate held inputs, move to the workshop, and craft;
 - `equipItem`: retrieve and equip one targeted item.
 
 Movement, gathering, fighting, resting, withdrawing, and depositing remain
 internal Actions. They are not scheduler-visible Activities.
 
-The existing farming and hunting modules already expose bounded cycles.
-Crafting and equipping still acquire missing inputs recursively; during the
-migration they will instead return Blockers so policy can schedule prerequisite
-work explicitly.
+Farming and hunting expose bounded cycles. Targeted crafting returns typed
+Blockers for missing materials, profession levels, invalid recipes, and missing
+workshops; it never acquires prerequisites recursively. Equipping still uses the
+recursive legacy workflow and must move to the same model.
 
 ## Orchestration model
 
