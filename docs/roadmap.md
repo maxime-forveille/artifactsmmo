@@ -1,0 +1,154 @@
+# Roadmap
+
+This roadmap tracks bot capabilities, not the current runtime assignments in
+`tasks.json`. Git history remains the detailed record of delivered changes and
+live incidents.
+
+## Current direction
+
+Replace long-running `autoHunt`/`autoFarm` tasks with a crew orchestrator that
+selects bounded Activities from a shared Crew Snapshot and persistent Goals.
+
+The migration must keep the current bot usable at every step. Transitional
+tasks remain until their policy and execution behavior have moved behind the
+new orchestration Interface.
+
+## Delivered foundations
+
+### Client and runtime
+
+- [x] Generated OpenAPI TypeScript schema.
+- [x] Typed `openapi-fetch` client returning `ResultAsync`.
+- [x] Account-wide paced rate limiting with safety margin.
+- [x] Static catalog memoization.
+- [x] Short-lived character-log and bank caching.
+- [x] Bank cache invalidation after mutations.
+- [x] Cooldown-aware Character Agent.
+- [x] Hot-reloaded per-character `tasks.json` assignments.
+- [x] Per-character cancellation and restart isolation.
+
+### Executable workflows
+
+- [x] Farming cycle: move, gather until full, bank.
+- [x] Hunting cycle: move, fight/rest until full, bank.
+- [x] Recursive craft-and-equip workflow.
+- [x] Bank-aware material sourcing and inventory-full recovery.
+- [x] Safe monster-drop fallback for crafting materials.
+- [x] Gathering tools selected for the current skill.
+- [x] Combat equipment selected against the current monster.
+
+### Decision inputs
+
+- [x] Pure combat safety and combat-margin model.
+- [x] Safe monster selection.
+- [x] Observed monster XP/second from character logs.
+- [x] Farmable resource selection by gathering skill level.
+- [x] Read-only combat gear upgrade detection.
+- [x] Read-only recursive material-cost planning.
+- [x] Bank-surplus craft detection.
+- [x] Targeted profession progression for a blocked upgrade.
+
+### Crew orchestration foundations
+
+- [x] Shared read-only Crew Snapshot for all characters and bank pages.
+- [x] Pure snapshot-to-assignment policy seam.
+- [x] First cross-character resource-replenishment rule.
+- [x] `activities/`, `orchestration/`, and `runtime/` module structure.
+- [x] Initial bounded Activity type.
+- [x] Action, Activity, Goal, Reservation, and failure vocabulary.
+
+## In progress: bounded Activity migration
+
+### 1. Orchestrator state
+
+- [ ] Define plain-data Goals and Reservations.
+- [ ] Keep runtime promises and cancellation handles outside state.
+- [ ] Define pure state transitions for Activity completion and Blockers.
+- [ ] Decide initial crew-level Goal ownership and priority ordering.
+
+### 2. Activity execution
+
+- [ ] Add a runtime dispatcher for one bounded Activity.
+- [ ] Reuse the existing farming and hunting cycles.
+- [ ] Add targeted craft execution that does not acquire missing inputs
+      recursively.
+- [ ] Add targeted equip execution that does not craft missing equipment
+      recursively.
+- [ ] Return typed Blockers for missing prerequisites.
+
+### 3. Rolling scheduler
+
+- [ ] Run at most one Activity per character.
+- [ ] Serialize simultaneous completion events.
+- [ ] Refresh the Crew Snapshot after an Activity finishes.
+- [ ] Schedule only idle characters.
+- [ ] Keep in-flight Reservations visible to policy.
+- [ ] Retry Transient Failures without invoking policy again.
+- [ ] Return Blockers to policy with their Goal preserved.
+
+### 4. Extract existing automatic decisions
+
+- [ ] Move monster selection out of `runAutoHuntTask`.
+- [ ] Move resource selection out of `runAutoFarmTask`.
+- [ ] Move profession Goals out of local task-runner Maps.
+- [ ] Move gear-upgrade decisions into orchestration.
+- [ ] Replace `autoHunt` and `autoFarm` with composed Activities.
+- [ ] Remove `runForever` once no autonomous behavior depends on it.
+
+### 5. Assignment sources
+
+- [ ] Move assignment vocabulary out of `utils/`.
+- [ ] Keep `tasks.json` as a human Adapter during migration.
+- [ ] Make the orchestrator the default assignment source once proven.
+- [ ] Support one-shot human overrides that return control after completion.
+
+## Decision quality
+
+- [ ] Support several simultaneous bank targets with explicit priority.
+- [ ] Account for in-flight production before assigning duplicate work.
+- [ ] Compare hunting and gathering with observed XP/time data.
+- [ ] Choose profession XP recipes from observed efficiency rather than only
+      missing-material count and recipe level.
+- [ ] Re-evaluate resource thresholds from observed consumption and production.
+- [ ] Coordinate one character gathering for another character's craft Goal.
+- [ ] Process useful bank surpluses without starving higher-priority Goals.
+
+## Persistence
+
+Start with in-memory orchestrator state.
+
+Consider SQLite only when at least one of these becomes necessary:
+
+- Goals must survive process restarts;
+- request-rate history must survive development restarts;
+- decision history is needed for tuning;
+- API data no longer provides enough queryable history;
+- production and consumption rates need aggregation.
+
+## Later capabilities
+
+### Recycling
+
+Recycle only when the safety policy is proven. Open constraints:
+
+- only crafted equipment, never raw resources by default;
+- only equipment sufficiently below current progression;
+- never recycle the best available gathering tool for a skill;
+- preserve an item until a strictly better replacement is held or equipped;
+- provide a dry-run explanation before any irreversible recycle Action.
+
+### Economy and combat
+
+- [ ] Grand Exchange trading.
+- [ ] NPC trading.
+- [ ] Multi-character boss fights.
+- [ ] Raid participation and coordinated group equipment.
+
+### Event-driven decisions
+
+- [ ] Consume raid spawns and server announcements.
+- [ ] React to rare events without waiting for the next polling cycle.
+- [ ] Send optional Discord notifications for notable drops and failures.
+
+Event consumption stays long-term until the polling orchestrator and its
+priority model are stable.
