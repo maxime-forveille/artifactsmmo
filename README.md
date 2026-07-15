@@ -810,7 +810,14 @@ per-character work, with the first observational slice now delivered:
    Simultaneous completions enter one decision queue rather than racing two
    snapshots or policy transitions. Promises and `AbortController`s remain
    runtime details, never persisted orchestration state.
-5. Once proven, the orchestrator is expected to become the sole source of
+5. Activity failure handling is split by meaning. A transport, rate-limit, or
+   server failure is transient: the runtime waits and retries the same Activity
+   because its intent remains valid. A domain Blocker ends the Activity,
+   removes its Reservation, preserves its Goal, and returns control to policy
+   so prerequisite work can be selected. Cancellation is a separate outcome
+   used by manual overrides or shutdown, not treated as failure. This avoids
+   both replanning on network noise and retrying impossible work forever.
+6. Once proven, the orchestrator is expected to become the sole source of
    assignments - `tasks.json` (the human-edited one) fades out as the bot's
    autonomy grows. One exception planned: a one-shot, explicit human override
    request that takes precedence over the orchestrator temporarily for a

@@ -34,3 +34,13 @@ _Avoid_: Task runner, activity executor
 A plain-data record of an activity already running for a character, including
 what it intends to produce or consume so another decision does not duplicate it.
 _Avoid_: Running promise, lock
+
+**Blocker**:
+A domain reason an activity cannot advance its goal, returned to the
+orchestrator so it can preserve the goal and choose prerequisite work.
+_Avoid_: Transient error, retry
+
+**Transient Failure**:
+A transport, rate-limit, or server failure that leaves the selected activity
+valid and is retried by the runtime without invoking policy again.
+_Avoid_: Blocker, activity outcome
