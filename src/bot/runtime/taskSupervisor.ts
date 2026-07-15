@@ -1,8 +1,7 @@
 import type { ArtifactsClient } from "../../client/index.js";
 import { logger } from "../../utils/logger.js";
-import type { TaskAssignment } from "../../utils/taskAssignments.js";
 import { runTask } from "../tasks/runTask.js";
-import { tasksEqual, type Task } from "../tasks/task.js";
+import { tasksEqual, type Task, type TaskAssignment } from "../tasks/task.js";
 
 type RunningCharacter = {
   readonly controller: AbortController;

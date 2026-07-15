@@ -33,6 +33,11 @@ export type Task =
   | { readonly type: "farm"; readonly resource: string }
   | { readonly type: "hunt"; readonly monster: string };
 
+export type TaskAssignment = Readonly<{
+  character: string;
+  task: Task;
+}>;
+
 const gatheringSkillSchema = v.picklist(["alchemy", "fishing", "mining", "woodcutting"] as const);
 
 /**

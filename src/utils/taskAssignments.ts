@@ -2,9 +2,7 @@ import { readFileSync } from "node:fs";
 
 import * as v from "valibot";
 
-import { type Task, taskSchema } from "../bot/tasks/task.js";
-
-export type TaskAssignment = { readonly character: string; readonly task: Task };
+import { taskSchema, type TaskAssignment } from "../bot/tasks/task.js";
 
 // A JSON object keyed by character name, rather than an array of
 // {character, task} pairs, so a duplicate character name is a JSON

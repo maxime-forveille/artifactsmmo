@@ -101,7 +101,7 @@ new orchestration Interface.
 
 - [x] Validate explicit orchestration Goals and resource mappings.
 - [x] Resolve configured resources before runtime startup.
-- [ ] Move assignment vocabulary out of `utils/`.
+- [x] Move assignment vocabulary out of `utils/`.
 - [ ] Keep `tasks.json` as a human Adapter during migration.
 - [ ] Make the orchestrator the default assignment source once proven.
 - [ ] Support one-shot human overrides that return control after completion.

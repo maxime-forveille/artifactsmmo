@@ -1,6 +1,5 @@
 import { err, ok, type Result } from "neverthrow";
 
-import type { TaskAssignment } from "../../utils/taskAssignments.js";
 import type { CrewSnapshot } from "./crewSnapshot.js";
 import {
   findBestGatherer,
@@ -9,7 +8,7 @@ import {
   type Resource,
   type ResourceReplenishmentError,
 } from "./resourceReplenishment.js";
-import type { Task } from "../tasks/task.js";
+import type { Task, TaskAssignment } from "../tasks/task.js";
 
 export { InvalidResourceTargetError, NoEligibleGathererError };
 export type { ResourceReplenishmentError };
