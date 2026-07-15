@@ -154,6 +154,8 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
   const getCharacter = (name: string) =>
     toResult(client.GET("/characters/{name}", { params: { path: { name } } }));
 
+  const getMyCharacters = () => toResult(client.GET("/my/characters"));
+
   // These 7 catalog endpoints describe game content (items, monsters,
   // resources, maps) that never changes for as long as this process runs -
   // caching them (see `memoizeAsync`) avoids re-fetching the exact same
@@ -334,6 +336,7 @@ export const createArtifactsClient = (token: string = env.ARTIFACTS_TOKEN) => {
     getItems,
     getMaps,
     getMonster,
+    getMyCharacters,
     getMonsters,
     getResource,
     getResources,

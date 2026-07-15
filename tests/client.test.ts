@@ -40,6 +40,23 @@ describe("createArtifactsClient", () => {
     expect(result._unsafeUnwrap().data.name).toBe("Cartman");
   });
 
+  it("fetches every character owned by the authenticated account", async () => {
+    server.use(
+      http.get("https://api.artifactsmmo.com/my/characters", () =>
+        HttpResponse.json({ data: [{ name: "Cartman" }, { name: "Stan" }] }),
+      ),
+    );
+
+    const client = createArtifactsClient("test-token");
+    const result = await client.getMyCharacters();
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap().data.map((character) => character.name)).toEqual([
+      "Cartman",
+      "Stan",
+    ]);
+  });
+
   it("maps a non-2xx response to an ArtifactsApiError", async () => {
     server.use(
       http.get("https://api.artifactsmmo.com/characters/:name", () =>
