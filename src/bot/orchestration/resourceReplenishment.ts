@@ -1,6 +1,7 @@
 import { err, ok, type Result } from "neverthrow";
 
 import type { components } from "../../client/schema.js";
+import type { FarmResourceActivity } from "../activities/activity.js";
 import type { CrewSnapshot } from "./crewSnapshot.js";
 import type {
   ActivityAssignment,
@@ -33,7 +34,7 @@ export class NoEligibleGathererError extends Error {
 export type ResourceReplenishmentError = InvalidResourceTargetError | NoEligibleGathererError;
 
 export type ResourceReplenishmentPlan = Readonly<{
-  activities: readonly ActivityAssignment[];
+  activities: readonly ActivityAssignment<FarmResourceActivity>[];
   state: OrchestratorState;
 }>;
 

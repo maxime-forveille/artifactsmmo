@@ -68,8 +68,8 @@ new orchestration Interface.
 
 ### 2. Activity execution
 
-- [ ] Add a runtime dispatcher for one bounded Activity.
-- [ ] Reuse the existing farming and hunting cycles.
+- [x] Add a runtime dispatcher for bounded farming and hunting Activities.
+- [x] Reuse the existing farming and hunting cycles.
 - [ ] Add targeted craft execution that does not acquire missing inputs
       recursively.
 - [ ] Add targeted equip execution that does not craft missing equipment

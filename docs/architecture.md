@@ -55,6 +55,11 @@ The client also owns account-wide request protection:
 `runtime/characterAgent.ts` tracks one character's latest state from Action
 responses and waits out cooldowns before sending the next Action.
 
+`runtime/activityDispatcher.ts` executes one already-selected bounded Activity
+with an existing Character Agent. It currently dispatches `farmResource` and
+`huntMonster` to their existing cycles; scheduling, Reservations, retry, and
+policy remain outside the dispatcher.
+
 `runtime/taskSupervisor.ts` currently supervises long-running tasks with one
 `AbortController` per character. Its useful behavior should survive the
 migration:

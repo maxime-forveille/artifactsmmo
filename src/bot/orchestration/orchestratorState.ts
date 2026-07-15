@@ -13,8 +13,8 @@ export type ItemIntent = Readonly<{
   itemCode: string;
 }>;
 
-export type ActivityAssignment = Readonly<{
-  activity: Activity;
+export type ActivityAssignment<TActivity extends Activity = Activity> = Readonly<{
+  activity: TActivity;
   characterName: string;
   consumes: readonly ItemIntent[];
   goalId: string;

@@ -1,18 +1,26 @@
+export type CraftItemActivity = Readonly<{
+  itemCode: string;
+  quantity: number;
+  type: "craftItem";
+}>;
+
+export type EquipItemActivity = Readonly<{
+  itemCode: string;
+  type: "equipItem";
+}>;
+
+export type FarmResourceActivity = Readonly<{
+  resourceCode: string;
+  type: "farmResource";
+}>;
+
+export type HuntMonsterActivity = Readonly<{
+  monsterCode: string;
+  type: "huntMonster";
+}>;
+
 export type Activity =
-  | {
-      readonly itemCode: string;
-      readonly quantity: number;
-      readonly type: "craftItem";
-    }
-  | {
-      readonly itemCode: string;
-      readonly type: "equipItem";
-    }
-  | {
-      readonly resourceCode: string;
-      readonly type: "farmResource";
-    }
-  | {
-      readonly monsterCode: string;
-      readonly type: "huntMonster";
-    };
+  | CraftItemActivity
+  | EquipItemActivity
+  | FarmResourceActivity
+  | HuntMonsterActivity;
