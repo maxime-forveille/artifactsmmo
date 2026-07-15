@@ -91,10 +91,6 @@ const materialsNeededForItem = (
   const itemCode = item.code;
   const held = heldQuantity(character, itemCode);
 
-  if (held >= quantity) {
-    return okAsync([]);
-  }
-
   return bankQuantity(client, itemCode).andThen((banked) => {
     const stillMissing = quantity - held - banked;
 
