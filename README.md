@@ -27,7 +27,7 @@ tests + live smoke checks), then the next one.
 - **Validation:** Valibot (env vars)
 - **Dates:** date-fns (Temporal isn't natively available yet on Node 24 without `--experimental-temporal` or a polyfill)
 - **Logging:** pino (pretty-printed in development)
-- **Testing:** Vitest + MSW (for HTTP-contract tests against the client)
+- **Testing:** Vitest + MSW (HTTP-contract tests) + Stryker (mutation testing)
 - **Linting/Formatting:** oxlint + oxfmt
 
 ## Quick Start
@@ -218,6 +218,8 @@ pnpm type-check        # Type checking only, no emit
 pnpm test              # Run all tests once
 pnpm test:watch        # Watch mode
 pnpm test:coverage     # Coverage report
+pnpm test:mutation:dry # Validate the Stryker/Vitest setup without mutants
+pnpm test:mutation     # Run incremental mutation testing + HTML report
 pnpm lint              # oxlint
 pnpm lint:fix          # oxlint --fix
 pnpm format            # oxfmt
@@ -226,6 +228,16 @@ pnpm format:check      # oxfmt --check
 # Codegen
 pnpm generate:api-types  # Regenerate src/client/schema.d.ts from the live OpenAPI spec
 ```
+
+Mutation testing is configured in `stryker.config.mjs`. It mutates production
+TypeScript under `src/`, excluding the generated OpenAPI declaration and the
+runtime entry point. Results are incremental between runs and the HTML report
+is written under the ignored `reports/` directory. Stryker runs in-place
+because TypeScript 7's native-preview package does not expose the compiler API
+used to rewrite sandboxed tsconfig files; it creates a `.stryker-tmp` backup
+and restores every source file after the run. The initial thresholds are
+informational (`break: null`) until the baseline score is known; tighten the
+build-breaking threshold after surviving mutants have been reviewed.
 
 ## Known Limitations
 
