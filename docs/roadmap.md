@@ -81,7 +81,7 @@ new orchestration Interface.
 - [x] Run at most one Activity per character.
 - [x] Serialize simultaneous completion events.
 - [x] Refresh the Crew Snapshot after an Activity finishes.
-- [ ] Schedule only idle characters.
+- [x] Schedule only idle characters.
 - [x] Keep in-flight Reservations visible to policy.
 - [x] Retry Transient Failures without invoking policy again.
 - [ ] Return Blockers to policy with their Goal preserved.

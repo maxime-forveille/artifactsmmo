@@ -73,6 +73,12 @@ and Blocker details, then refreshes the Crew Snapshot before processing the next
 event. A failed refresh keeps the released state and previous snapshot so the
 runtime never replays a terminal event against an already-finished Activity.
 
+`runtime/activityScheduler.ts` evaluates one Activity policy against one
+snapshot and state, validates the complete proposed plan, then launches each
+assignment against the state produced by the preceding start. Whole-plan
+validation prevents malformed multi-Activity proposals from starting only a
+prefix before discovering a duplicate character or missing Goal.
+
 `runtime/taskSupervisor.ts` currently supervises long-running tasks with one
 `AbortController` per character. Its useful behavior should survive the
 migration:
