@@ -96,6 +96,12 @@ transport/server failures for retry, and refreshes observations. Goals, policy,
 reporting, and retry timing remain explicit inputs; the adapter does not invent
 bank thresholds or autonomous priorities.
 
+`runtime/configuredCrewRuntime.ts` resolves every configured resource against
+the static catalog before constructing that adapter. The resulting Goal-to-
+resource mapping feeds a pure multi-Goal replenishment policy. An unresolved
+catalog entry prevents startup rather than allowing a partial or ambiguous
+runtime configuration.
+
 `runtime/taskSupervisor.ts` currently supervises long-running tasks with one
 `AbortController` per character. Its useful behavior should survive the
 migration:
