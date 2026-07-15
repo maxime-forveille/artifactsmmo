@@ -785,26 +785,28 @@ per-character work, with the first observational slice now delivered:
    principle `xpRates.ts` already applies to combat rates. Revisit with
    something like SQLite once there's a real need for history/aggregation
    the API doesn't already give for free, not before.
-2. 🟡 The orchestrator itself becomes another producer of
-   `TaskAssignment[]`, feeding the exact `reconcileTasks`/
-   `taskSupervisor.ts` mechanism that already exists (today fed by a human
-   editing `tasks.json`) - not a new execution model.
-   `proposeCrewAssignments` now provides the pure snapshot-to-proposal
-   boundary, with `autoHunt` as a conservative baseline. The first concrete
-   rule, `proposeResourceReplenishment`, can divert the strongest eligible
-   gatherer to a fixed resource until an explicit bank threshold is reached.
-   It handles one target at a time and is deliberately not connected to
-   `reconcileTasks` yet. Each character will keep running its own
-   `runTask`/`runForever` loop, oblivious to the orchestrator; it will just
-   receive a different task from time to time, exactly like a human editing
-   `tasks.json` does today.
-3. Once proven, the orchestrator is expected to become the sole source of
-   assignments - `tasks.json` (the human-edited one) fades out as the
-   bot's autonomy grows. One exception planned: a one-shot, explicit
-   human override request that takes precedence over the orchestrator
-   temporarily for a specific character, then hands control back once it
-   completes - the closest thing to a manual command channel once the
-   bot is mostly running itself.
+2. 🟡 `proposeCrewAssignments` currently provides a pure
+   snapshot-to-`TaskAssignment[]` transition, with `autoHunt` as a conservative
+   baseline. Its first concrete rule, `proposeResourceReplenishment`, can
+   divert the strongest eligible gatherer to a fixed resource until an
+   explicit bank threshold is reached. This Interface is transitional: the
+   orchestrator will progressively replace `autoHunt`/`autoFarm` with smaller
+   bounded Activities rather than creating more `autoXXX` task variants.
+3. The target decision model is a pure transition from `CrewSnapshot` plus
+   `OrchestratorState` to proposed Activities plus the next state. A Goal
+   persists across several Activities; an Activity performs one complete
+   operational cycle before the crew is observed again. Initially that means
+   resource → inventory full → bank for farming, monster → inventory full →
+   bank for hunting, and one targeted craft for profession progress. This
+   reuses `runFarmingCycle`, `runHuntingCycle`, and `craftItem`, limits data
+   requests, and keeps decisions separate from game Actions. State stays
+   in-memory first and may move to SQLite later without changing policy.
+4. Once proven, the orchestrator is expected to become the sole source of
+   assignments - `tasks.json` (the human-edited one) fades out as the bot's
+   autonomy grows. One exception planned: a one-shot, explicit human override
+   request that takes precedence over the orchestrator temporarily for a
+   specific character, then hands control back once it completes - the closest
+   thing to a manual command channel once the bot is mostly running itself.
 
 Deliberately left open, to avoid speculative design ahead of a real
 need: exactly which cross-character decisions get built first (material
