@@ -1,58 +1,133 @@
 # AGENTS.md
 
-Rules for AI agents operating in this repository. This root file is the **index**.
+Rules for coding agents operating in this repository. This file is the project
+index; detailed knowledge lives in the documents below.
 
-## Agent profile
+## Documentation map
 
-Senior TypeScript full-stack engineer specialised in Node.js, Scripting.
+Read the primary document for the area before changing it:
 
-## Scope and behaviour
+- `CONTEXT.md`: canonical vocabulary for Action, Activity, Goal, Reservation,
+  Blocker, Transient Failure, and orchestration.
+- `docs/architecture.md`: module responsibilities, dependency direction, and
+  the target orchestration model.
+- `docs/roadmap.md`: migration status and intended sequencing. Roadmap items
+  provide context, not authorization for unrelated work.
+- `docs/runbook.md`: runtime operation, diagnostics, rate limits, mutation
+  testing, and live-check safety.
+- `README.md` and `package.json`: setup and supported commands.
 
-Agents in this repo are for **local development help only** — propose, implement, run tests / lint / type-check, and stop there. The human reviews the diff and commits.
+## Scope and safety
 
-Do not:
+Agents provide local development help: investigate, propose, implement,
+validate, and summarize changes for human review.
 
-- push, or open PRs.
-- Invent APIs, data models, or behaviours not described in the task.
-- Remove or weaken tests to make code pass.
-- Introduce new dependencies without justification.
-- Change architectural patterns without explicit instruction.
+- Do not push or open pull requests.
+- Do not commit unless the user explicitly requests it.
+- Do not expose tokens, secrets, or account-specific data.
+- Do not invent Artifacts API contracts, domain policies, thresholds, or
+  irreversible behavior.
+- Internal implementation types are allowed when they directly support the
+  requested behavior and respect the documented architecture.
+- Do not remove or weaken tests to make code pass.
+- Do not introduce dependencies without a concrete justification.
+- Follow `docs/architecture.md`; do not introduce competing architectural
+  patterns.
 
-For non-trivial changes: short plan first, then implement, then run tests / format / type-check, then summarise what changed.
+For non-trivial changes, give a short plan first. Keep changes focused on the
+request, address root causes, validate the affected scope, and summarize the
+result. Update documentation when a change alters documented vocabulary,
+behavior, module responsibilities, or operational guidance.
 
-## Core principles
+## Architecture and vocabulary
 
-- Concise, technical TypeScript. Functional and declarative; avoid classes.
-- Favour iteration and modularisation over duplication; factorise only when shared by ≥2 consumers.
-- Descriptive names with auxiliary verbs (`isLoading`, `hasError`).
-- Guard clauses and early returns for error handling.
-- Optimise for readability and maintainability.
+- An **Action** is one elementary operation sent to Artifacts MMO.
+- An **Activity** is a bounded workflow composed of Actions.
+- Orchestration observes `CrewSnapshot` plus state and proposes Activities; it
+  does not perform Actions.
+- Runtime executes, retries, schedules, and cancels; it does not own policy.
+- Keep orchestration decisions deterministic and pure where practical.
+- Prefer observed live game state over duplicated local state.
+- Expected API, transport, and domain failures use typed
+  `Result`/`ResultAsync` values. Typed `Error` subclasses may be error payloads.
+- Follow `CONTEXT.md` and `docs/architecture.md` when distinguishing Blockers,
+  Transient Failures, and Cancellation.
+- `src/bot/tasks/` is transitional. Fix it when required, but do not deepen the
+  forever-task or `autoXXX` model when new behavior belongs in Activities or
+  orchestration.
 
-## TypeScript
+## TypeScript and code style
 
-- TypeScript everywhere. Repo is ESM (`"type": "module"`).
-- Prefer `type` over `interface`.
+- Use TypeScript for source, tests, and scripts. Generated declarations and
+  tool-required configuration formats are exceptions.
+- The repository uses ESM with `NodeNext` resolution.
+- Include `.js` extensions in relative TypeScript imports.
+- Prefer `type` over `interface` in handwritten code. Generated declarations
+  are exempt.
+- Use `import type` when an import is used only as a type.
 - Prefer arrow functions and pure functions.
-- Curly braces in conditionals (except ternaries). One-liners only when highly readable.
-- No barrel files (`index.ts` that re-exports).
+- Prefer functional, declarative TypeScript. Avoid classes except typed
+  `Error` subclasses.
+- Use guard clauses and early returns for error handling.
+- Use braces in conditionals except for readable ternaries.
+- Use named exports in application modules. Tool configuration may use a
+  required default export.
+- Do not create re-export-only barrel modules. An `index.ts` containing real
+  implementation is not a barrel.
+- Use camelCase directory and file names, except established documentation and
+  tool-convention files.
+- Keep object keys alphabetical when order has no semantic meaning. Preserve
+  protocol or domain ordering when it improves clarity.
+- Use descriptive names, including auxiliary verbs such as `isLoading` and
+  `hasError` for state.
+- Avoid speculative abstractions. Extract shared logic, or extract when doing
+  so creates a clear domain seam, pure decision seam, or meaningful test seam.
 
-## Architecture
+## Dependencies and generated code
 
-pnpm repository.
+- Prefer existing dependencies and established project patterns.
+- Use Valibot for runtime validation and date-fns for date calculations.
+- Do not substitute competing libraries without a justified dependency
+  change.
+- Never edit `src/client/schema.d.ts` directly.
+- Regenerate API declarations with `pnpm generate:api-types` and review the
+  generated diff.
 
-Validation: valibot (functional, tree-shakeable API — `v.object()`/`v.pipe()`/`v.safeParse()` as plain functions rather than zod's method-chained builder — and a much smaller bundle; chosen over zod for the same "avoid classes"/functional-first reasoning). Dates: date-fns (pure functions over native `Date`; avoid class-based date libraries like luxon/moment to stay consistent with "avoid classes"). Temporal is not used yet: not natively available in Node 24 without `--experimental-temporal` or a polyfill dependency — revisit once it ships stable.
+## Tests and validation
 
-## Code style
+Use `package.json` scripts instead of invoking `tsc`, `vitest`, `oxlint`,
+`oxfmt`, `tsx`, Stryker, or other underlying binaries directly.
 
-- Named exports.
-- camelCase directories and files (e.g., `userService.ts`).
-- Sort object keys and props alphabetically.
+Run checks appropriate to the changed scope:
+
+- source changes normally require `pnpm format`, `pnpm type-check`,
+  `pnpm lint`, and relevant tests;
+- documentation-only changes require at least `pnpm format:check` and link or
+  reference validation where applicable;
+- OpenAPI regeneration requires type-checking and tests after reviewing the
+  generated diff.
+
+Tests must not make uncontrolled live network calls. Use MSW for HTTP behavior.
+Live checks require explicit need and must follow `docs/runbook.md`.
+
+Mutation testing measures contract strength, not progress toward an artificial
+100% score. Add tests for meaningful surviving mutants, not equivalent or
+implementation-only mutants.
+
+Do not claim validation passed unless the command was run successfully. If a
+failure is unrelated to the change, report it rather than hiding or fixing it
+without scope.
 
 ## Commit style
 
-- Use conventional commits (e.g., `feat: add user service`).
-- Commit title should be clear and concise.
-- Commit body should explain what changed and why.
+When the user requests commits:
+
+- use focused conventional commits, such as `feat: add activity scheduling`;
+- prefer intermediate commits when the user asks for them;
+- keep the title clear and concise;
+- explain what changed and why in the body;
+- wrap commit body lines at 72 characters or fewer;
+- do not push after committing.
 
 ## Priority
 
