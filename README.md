@@ -68,6 +68,7 @@ pnpm dev
 │   │   ├── combat.ts        # fightSafely: rests when HP is low, fights once,
 │   │   │                    # logs a loss; averageDamagePerTurn/isSafeToFight:
 │   │   │                    # the damage model shared with gear.ts
+│   │   ├── crewSnapshot.ts  # Read-only shared view of all characters + bank
 │   │   ├── gear.ts          # Task-appropriate equipment: findBestGatheringTool
 │   │   │                    # (best tool for a gathering skill) and
 │   │   │                    # findBestCombatWeapon (best weapon vs a monster)
@@ -201,7 +202,11 @@ project source - same treatment as `.env`.
   `craftAndEquipThenHunt` does both (gear up, then hunt forever - the
   craft/equip part is a no-op for characters that already have the item).
   `src/index.ts` assigns one task per character.
-- **Tests** — 60+ Vitest tests (dependency-injected fakes/neverthrow, no real
+- **Crew snapshot** (`src/bot/crewSnapshot.ts`) — reads all account characters
+  and every bank page into one deterministic, read-only value. It is the
+  observational foundation for cross-character decisions and deliberately
+  performs no assignment or game action yet.
+- **Tests** — 190+ Vitest tests (dependency-injected fakes/neverthrow, no real
   network except `tests/client.test.ts`, which uses MSW for HTTP-contract
   tests).
 
@@ -410,6 +415,10 @@ Recently delivered (see git log for details):
   profession (`planProfessionProgress`), gathers or safely hunts one craft's
   missing materials, and repeats one bounded craft per cycle until the
   threshold is reached. It then re-checks gear and resumes hunting.
+- ✅ Shared crew snapshot (`readCrewSnapshot`, `src/bot/crewSnapshot.ts`): one
+  account-character read plus every bank page produces a deterministic,
+  read-only view for future cross-character policies. This first slice only
+  senses account state; it does not assign tasks or perform actions.
 
 Up next (not yet started, roughly in order of likely value - see point 7
 under "Automated progression decisions" for the full staged plan):
@@ -736,7 +745,7 @@ combine` - safe here since it's read-only, unlike the action
    executes exactly one target craft per cycle, while client TTL caches
    collapse repeated log and bank reads.
 
-### Cross-character orchestration (target architecture, not started)
+### Cross-character orchestration (foundation started)
 
 Everything above is about a single character deciding its own next move.
 But some decisions only make sense with visibility across all 5
@@ -745,19 +754,19 @@ character needs it to craft, who should switch to processing a bank
 surplus, or several characters teaming up for a fight the game models as
 a group encounter (see "Known Limitations" - multi-character boss fights
 aren't supported at all yet). A design review sketched the target shape
-for this, deliberately staged behind the still-in-progress per-character
-work above rather than built now:
+for this. It remains deliberately staged alongside the still-in-progress
+per-character work, with the first observational slice now delivered:
 
-1. A read-only, shared snapshot of all 5 characters (level, inventory,
-   equipped gear, position, skills) plus bank contents - the
+1. ✅ A read-only, shared snapshot of all 5 characters (level, inventory,
+   equipped gear, position, skills) plus every page of bank contents - the
    prerequisite visibility any cross-character decision needs, mirroring
    the "sensing before policy" split already applied above (Gap A/B).
-   Computed on demand directly from the API (`getCharacter` x5 +
-   `getBankItems`) for now, not persisted anywhere - the same "observed
-   API data instead of a duplicated store" principle `xpRates.ts`
-   already applies to combat rates. Revisit with something like SQLite
-   once there's a real need for history/aggregation the API doesn't
-   already give for free, not before.
+   `readCrewSnapshot` computes it on demand from one `getMyCharacters` read
+   and paginated `getBankItems` reads, with no persistence or actions. This
+   follows the same "observed API data instead of a duplicated store"
+   principle `xpRates.ts` already applies to combat rates. Revisit with
+   something like SQLite once there's a real need for history/aggregation
+   the API doesn't already give for free, not before.
 2. The orchestrator itself becomes another producer of `TaskAssignment[]`,
    feeding the exact `reconcileTasks`/`taskSupervisor.ts` mechanism that
    already exists (today fed by a human editing `tasks.json`) - not a new
