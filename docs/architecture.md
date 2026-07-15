@@ -63,10 +63,15 @@ policy remain outside the dispatcher.
 `runtime/activityLauncher.ts` atomically reserves an idle character and starts
 one dispatched Activity. It retries failures classified as transient without
 releasing the Reservation or invoking policy, then emits a completed, blocked,
-or cancelled terminal outcome. It does not apply that outcome to shared state:
-the rolling scheduler must serialize terminal events against its latest state.
-Concrete error-to-disposition classification remains a separate boundary while
-existing Activities still return their transitional raw error unions.
+or cancelled terminal outcome. Concrete error-to-disposition classification
+remains a separate boundary while existing Activities still return their
+transitional raw error unions.
+
+`runtime/activityEventProcessor.ts` serializes those terminal outcomes against
+the latest shared state. It releases the matching Reservation, preserves Goals
+and Blocker details, then refreshes the Crew Snapshot before processing the next
+event. A failed refresh keeps the released state and previous snapshot so the
+runtime never replays a terminal event against an already-finished Activity.
 
 `runtime/taskSupervisor.ts` currently supervises long-running tasks with one
 `AbortController` per character. Its useful behavior should survive the
