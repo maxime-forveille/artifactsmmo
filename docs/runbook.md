@@ -43,7 +43,7 @@ NODE_ENV=development
 The runtime currently supports two mutually exclusive configuration paths:
 
 1. `orchestration.json` starts the rolling orchestrator with its current ordered
-   explicit `goals` schema;
+   explicit `goals` schema and may also validate `policy.goalRuleOrder`;
 2. when that file is absent, `tasks.json` starts the transitional Task Adapter.
 
 Create transitional task assignments from the template:
@@ -56,11 +56,11 @@ cp tasks.example.json tasks.json
 old character task between cycles, waits for it to stop, then starts the new
 one. Invalid JSON is logged and the last-known-good assignments keep running.
 
-The target `orchestration.json` schema will configure autonomous Goal Rule order
-and optional one-shot overrides instead of permanent character assignments. The
-future `policy.goalRuleOrder` shape documented in the README and architecture
-is not accepted by the runtime yet. Safety, Reservation, prerequisite, and
-resource-exclusivity invariants will remain non-configurable.
+The migration schema accepts `policy.goalRuleOrder`, requiring every supported
+rule exactly once, but the current runtime still executes only explicit Goals.
+Autonomous Goal generation and optional one-shot overrides remain future steps.
+Safety, Reservation, prerequisite, and resource-exclusivity invariants remain
+non-configurable.
 
 ## Validation commands
 

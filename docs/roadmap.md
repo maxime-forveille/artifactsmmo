@@ -124,11 +124,11 @@ new orchestration Interface.
 
 ### 5. Configurable strategy
 
-- [ ] Validate named Goal Rules in `orchestration.json`.
-- [ ] Configure Goal Rule priority as one ordered array without numeric priority
+- [x] Validate named Goal Rules in `orchestration.json`.
+- [x] Configure Goal Rule priority as one ordered array without numeric priority
       collisions.
-- [ ] Require every supported autonomous rule to be present exactly once unless
-      explicit disabling semantics are designed.
+- [x] Require every supported autonomous rule to be present exactly once when
+      policy is configured; explicit disabling semantics remain undesigned.
 - [ ] Keep one-shot override Goals above autonomous Goal Proposals.
 - [ ] Log the rule, reason, configured rank, and utility evidence for every
       selected Goal Proposal.

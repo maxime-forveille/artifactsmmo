@@ -116,13 +116,13 @@ Eligible characters can craft intermediate or target items for one another;
 their output returns to the bank before the consumer continues. Ambiguous
 sources and insufficient crew profession levels remain blocked.
 
-The target `orchestration.json` is a strategy file rather than a replacement
-`tasks.json`. It will order named autonomous Goal Rules and accept optional
-finite one-shot overrides. The following target shape is documented now but is
-not yet accepted by the runtime schema:
+`orchestration.json` is becoming a strategy file rather than a replacement
+`tasks.json`. During migration, `policy.goalRuleOrder` is accepted alongside the
+current explicit `goals`. Every known rule must appear exactly once:
 
 ```json
 {
+  "goals": [],
   "policy": {
     "goalRuleOrder": [
       "equipmentUpgrade",
@@ -132,10 +132,13 @@ not yet accepted by the runtime schema:
       "bankReplenishment",
       "bankSurplusProcessing"
     ]
-  },
-  "overrides": []
+  }
 }
 ```
+
+The current runtime validates this policy but still executes only explicit
+Goals. Autonomous Goal generation and optional finite one-shot overrides are
+later migration steps.
 
 Rule order is configurable strategy. Safety, Reservations, prerequisite
 resolution, bank protection, and one-Activity-per-character constraints remain

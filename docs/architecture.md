@@ -332,11 +332,13 @@ item, and starts the rolling orchestrator. Goal priority, bank thresholds, and
 resource codes must all be explicit; the Adapter supplies no defaults. The file
 remains ignored as account-specific runtime configuration.
 
-Its target responsibility is policy rather than per-character assignment. A
-validated `policy.goalRuleOrder` array will order named Goal Rules, while
-optional `overrides` will contain finite one-shot Goals. Reordering known rules
-must change strategic preference without a code change. Adding a new behavior
-still requires a new tested Goal Rule; JSON does not contain executable decision
+Its target responsibility is policy rather than per-character assignment. The
+migration schema now accepts a validated `policy.goalRuleOrder` alongside
+explicit `goals`. Every supported Goal Rule must appear exactly once when policy
+is present. The current runtime does not consume that order yet. Optional
+`overrides` will later contain finite one-shot Goals. Reordering known rules must
+change strategic preference without a code change. Adding a new behavior still
+requires a new tested Goal Rule; JSON does not contain executable decision
 logic.
 
 Target shape:
@@ -376,8 +378,9 @@ policy Interface.
 
 ## Known structural debt
 
-- Autonomous Goal Policy and configurable Goal Rule ordering are documented but
-  not implemented; `orchestration.json` still contains explicit Goals.
+- Goal Policy foundations and Goal Rule order validation exist, but the runtime
+  still executes explicit `orchestration.json` Goals instead of autonomous Goal
+  Proposals.
 - `tasks/taskRunners.ts` still contains hidden orchestration and persistent
   profession goals.
 - `combat.ts` mixes pure safety calculations with combat execution.

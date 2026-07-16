@@ -9,6 +9,15 @@ import {
   parseOrchestrationConfig,
 } from '../src/utils/orchestrationConfig.js';
 
+const goalRuleOrder = [
+  'equipmentUpgrade',
+  'combatProgression',
+  'professionProgression',
+  'gatheringProgression',
+  'bankReplenishment',
+  'bankSurplusProcessing',
+] as const;
+
 const buildRawConfig = (overrides: Record<string, unknown> = {}): string =>
   JSON.stringify({
     goals: [
@@ -52,6 +61,60 @@ describe('parseOrchestrationConfig', () => {
         },
       ],
     });
+  });
+
+  it('accepts and preserves autonomous Goal Rule order', () => {
+    expect(
+      parseOrchestrationConfig(buildRawConfig({ policy: { goalRuleOrder } })),
+    ).toEqual({
+      goals: [
+        {
+          id: 'replenish-copper',
+          itemCode: 'copper_ore',
+          minimumBankQuantity: 50,
+          resourceCode: 'copper_rocks',
+          type: 'replenishBankItem',
+        },
+        {
+          id: 'replenish-ash',
+          itemCode: 'ash_wood',
+          minimumBankQuantity: 25,
+          resourceCode: 'ash_tree',
+          type: 'replenishBankItem',
+        },
+      ],
+      policy: { goalRuleOrder },
+    });
+  });
+
+  it.each([
+    { order: goalRuleOrder.slice(0, -1) },
+    { order: [...goalRuleOrder.slice(0, -1), goalRuleOrder[0]] },
+    { order: [...goalRuleOrder, goalRuleOrder[0]] },
+  ])('requires every Goal Rule exactly once', ({ order }) => {
+    expect(() =>
+      parseOrchestrationConfig(
+        buildRawConfig({ policy: { goalRuleOrder: order } }),
+      ),
+    ).toThrow(/every supported rule exactly once/);
+  });
+
+  it('rejects an unknown Goal Rule', () => {
+    expect(() =>
+      parseOrchestrationConfig(
+        buildRawConfig({
+          policy: { goalRuleOrder: [...goalRuleOrder.slice(0, -1), 'unknown'] },
+        }),
+      ),
+    ).toThrow(/Invalid orchestration configuration/);
+  });
+
+  it('rejects unknown policy fields', () => {
+    expect(() =>
+      parseOrchestrationConfig(
+        buildRawConfig({ policy: { goalRuleOrder, utilityWeights: {} } }),
+      ),
+    ).toThrow(/Invalid orchestration configuration/);
   });
 
   it('accepts an explicit character equipment Goal', () => {

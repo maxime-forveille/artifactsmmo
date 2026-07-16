@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import * as v from 'valibot';
 
+import {
+  GOAL_RULE_NAMES,
+  type GoalRuleName,
+} from '../bot/orchestration/goalPolicy.js';
 import type { OrchestratorState } from '../bot/orchestration/orchestratorState.js';
 
 const nonEmptyString = v.pipe(v.string(), v.minLength(1));
@@ -21,6 +25,16 @@ const configuredGoalSchema = v.variant('type', [
   }),
 ]);
 
+const goalRuleOrderSchema = v.pipe(
+  v.array(v.picklist(GOAL_RULE_NAMES)),
+  v.check(
+    (goalRuleOrder) =>
+      goalRuleOrder.length === GOAL_RULE_NAMES.length &&
+      new Set<GoalRuleName>(goalRuleOrder).size === GOAL_RULE_NAMES.length,
+    'Goal Rule order must contain every supported rule exactly once',
+  ),
+);
+
 const orchestrationConfigSchema = v.strictObject({
   goals: v.pipe(
     v.array(configuredGoalSchema),
@@ -29,6 +43,7 @@ const orchestrationConfigSchema = v.strictObject({
       'Goal ids must be unique',
     ),
   ),
+  policy: v.optional(v.strictObject({ goalRuleOrder: goalRuleOrderSchema })),
 });
 
 export type OrchestrationConfig = Readonly<
@@ -40,7 +55,7 @@ const formatIssues = (issues: readonly v.BaseIssue<unknown>[]): string =>
     .map((issue) => `  - ${v.getDotPath(issue) ?? '(root)'}: ${issue.message}`)
     .join('\n');
 
-/** Parses explicit crew Goals without supplying implicit targets or thresholds. */
+/** Parses explicit Goals and optional autonomous policy configuration. */
 export const parseOrchestrationConfig = (raw: string): OrchestrationConfig => {
   const parsed: unknown = JSON.parse(raw);
   const result = v.safeParse(orchestrationConfigSchema, parsed);
