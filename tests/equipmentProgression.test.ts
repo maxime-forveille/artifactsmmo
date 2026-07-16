@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   EquipmentCharacterNotFoundError,
+  InvalidEquipmentMaterialSourceError,
   InvalidEquipmentTargetError,
+  NoSafeEquipmentMaterialHunterError,
   planEquipmentProgression,
 } from "../src/bot/orchestration/equipmentProgression.js";
 import type { CrewSnapshot } from "../src/bot/orchestration/crewSnapshot.js";
@@ -11,10 +13,13 @@ import type {
   OrchestratorState,
   Reservation,
 } from "../src/bot/orchestration/orchestratorState.js";
+import { NoEligibleGathererError } from "../src/bot/orchestration/resourceReplenishment.js";
 import type { components } from "../src/client/schema.js";
 
 type Character = components["schemas"]["CharacterSchema"];
 type Item = components["schemas"]["ItemSchema"];
+type Monster = components["schemas"]["MonsterSchema"];
+type Resource = components["schemas"]["ResourceSchema"];
 
 const buildGoal = (overrides: Partial<EquipItemGoal> = {}): EquipItemGoal => ({
   characterName: "Stan",
@@ -30,6 +35,7 @@ const buildCharacter = (overrides: Partial<Character> = {}): Character => ({
   level: 5,
   name: "Stan",
   weapon_slot: "wooden_stick",
+  weaponcrafting_level: 5,
   ...overrides,
 });
 
@@ -46,6 +52,50 @@ const buildItem = (overrides: Partial<Item> = {}): Item => ({
   type: "weapon",
   ...overrides,
 });
+
+const buildMonster = (overrides: Partial<Monster> = {}): Monster => ({
+  ...({} as Monster),
+  attack_air: 0,
+  attack_earth: 2,
+  attack_fire: 0,
+  attack_water: 0,
+  code: "yellow_slime",
+  critical_strike: 0,
+  drops: [{ code: "yellow_slimeball", max_quantity: 1, min_quantity: 1, rate: 1 }],
+  hp: 20,
+  level: 2,
+  name: "Yellow Slime",
+  res_air: 0,
+  res_earth: 0,
+  res_fire: 0,
+  res_water: 0,
+  ...overrides,
+});
+
+const buildResource = (overrides: Partial<Resource> = {}): Resource => ({
+  code: "copper_rocks",
+  drops: [{ code: "copper_ore", max_quantity: 1, min_quantity: 1, rate: 1 }],
+  level: 1,
+  name: "Copper Rocks",
+  skill: "mining",
+  ...overrides,
+});
+
+const buildFighter = (overrides: Partial<Character> = {}): Character =>
+  buildCharacter({
+    attack_air: 0,
+    attack_earth: 10,
+    attack_fire: 0,
+    attack_water: 0,
+    critical_strike: 0,
+    hp: 100,
+    max_hp: 100,
+    res_air: 0,
+    res_earth: 0,
+    res_fire: 0,
+    res_water: 0,
+    ...overrides,
+  });
 
 const buildSnapshot = (overrides: Partial<CrewSnapshot> = {}): CrewSnapshot => ({
   bank: [],
@@ -194,7 +244,7 @@ describe("planEquipmentProgression", () => {
     });
   });
 
-  it("does not withdraw a recipe material already held in full", () => {
+  it("does not acquire a recipe material already held in full", () => {
     const character = buildCharacter({
       inventory: [{ code: "copper_bar", quantity: 2, slot: 1 }],
     });
@@ -205,6 +255,18 @@ describe("planEquipmentProgression", () => {
       }),
       buildState(),
       buildItem(),
+      undefined,
+      [
+        {
+          itemCode: "copper_bar",
+          source: {
+            resource: buildResource({
+              drops: [{ code: "copper_bar", max_quantity: 1, min_quantity: 1, rate: 1 }],
+            }),
+            type: "gather",
+          },
+        },
+      ],
     );
 
     expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
@@ -243,6 +305,432 @@ describe("planEquipmentProgression", () => {
     });
   });
 
+  it("assigns the best eligible gatherer for a missing raw material", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "copper_ore", quantity: 3 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({ mining_level: 1 }),
+        buildCharacter({ mining_level: 8, name: "Cartman" }),
+      ],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      {
+        itemCode: "iron_ore",
+        source: {
+          resource: buildResource({ code: "iron_rocks" }),
+          type: "gather",
+        },
+      },
+      {
+        itemCode: "copper_ore",
+        source: {
+          resource: buildResource({
+            drops: [
+              { code: "copper_ore", max_quantity: 1, min_quantity: 1, rate: 1 },
+              { code: "stone", max_quantity: 1, min_quantity: 1, rate: 1 },
+            ],
+          }),
+          type: "gather",
+        },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities).toEqual([
+      {
+        activity: { resourceCode: "copper_rocks", type: "farmResource" },
+        characterName: "Cartman",
+        consumes: [],
+        goalId: "equip-stan-dagger",
+        produces: [{ itemCode: "copper_ore" }],
+      },
+    ]);
+  });
+
+  it("acquires the first still-missing material in recipe order", () => {
+    const item = buildItem({
+      craft: {
+        items: [
+          { code: "copper_bar", quantity: 2 },
+          { code: "copper_ore", quantity: 3 },
+        ],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({
+          inventory: [{ code: "copper_bar", quantity: 2, slot: 1 }],
+          mining_level: 5,
+        }),
+      ],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      {
+        itemCode: "copper_ore",
+        source: { resource: buildResource(), type: "gather" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      resourceCode: "copper_rocks",
+      type: "farmResource",
+    });
+  });
+
+  it("assigns the safest hunter for a missing raw monster drop", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "yellow_slimeball", quantity: 2 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildFighter({ attack_earth: 5, name: "Cartman" }),
+        buildFighter({ attack_earth: 20, name: "Stan" }),
+      ],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      {
+        itemCode: "yellow_slimeball",
+        source: {
+          monster: buildMonster({
+            drops: [
+              { code: "yellow_slimeball", max_quantity: 1, min_quantity: 1, rate: 1 },
+              { code: "slime_residue", max_quantity: 1, min_quantity: 1, rate: 1 },
+            ],
+          }),
+          type: "hunt",
+        },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities).toEqual([
+      {
+        activity: { monsterCode: "yellow_slime", type: "huntMonster" },
+        characterName: "Stan",
+        consumes: [],
+        goalId: "equip-stan-dagger",
+        produces: [{ itemCode: "yellow_slimeball" }],
+      },
+    ]);
+  });
+
+  it("keeps an earlier hunter when later candidates have a worse margin", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "yellow_slimeball", quantity: 2 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildFighter({ attack_earth: 20, name: "Stan" }),
+        buildFighter({ attack_earth: 5, name: "Cartman" }),
+      ],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      {
+        itemCode: "yellow_slimeball",
+        source: { monster: buildMonster(), type: "hunt" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities[0]?.characterName).toBe("Stan");
+  });
+
+  it("breaks equal hunter margins by character name", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "yellow_slimeball", quantity: 2 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const snapshot = buildSnapshot({
+      characters: [buildFighter({ name: "Cartman" }), buildFighter({ name: "Stan" })],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      {
+        itemCode: "yellow_slimeball",
+        source: { monster: buildMonster(), type: "hunt" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities[0]?.characterName).toBe("Cartman");
+  });
+
+  it("assesses material hunters at post-rest HP", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "yellow_slimeball", quantity: 2 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const snapshot = buildSnapshot({
+      characters: [buildFighter({ hp: 1, max_hp: 100 })],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      {
+        itemCode: "yellow_slimeball",
+        source: { monster: buildMonster(), type: "hunt" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      monsterCode: "yellow_slime",
+      type: "huntMonster",
+    });
+  });
+
+  it("waits when every eligible material gatherer is already reserved", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "copper_ore", quantity: 3 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const reservation = buildReservation({ characterName: "Cartman" });
+    const state = buildState({ reservations: [reservation] });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({ mining_level: 0 }),
+        buildCharacter({ mining_level: 8, name: "Cartman" }),
+      ],
+    });
+
+    const result = planEquipmentProgression(snapshot, state, item, undefined, [
+      {
+        itemCode: "copper_ore",
+        source: { resource: buildResource(), type: "gather" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap()).toEqual({ activities: [], state });
+  });
+
+  it("waits when every safe material hunter is already reserved", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "yellow_slimeball", quantity: 2 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const reservation = buildReservation({ characterName: "Cartman" });
+    const state = buildState({ reservations: [reservation] });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildFighter({ attack_earth: 0, name: "Stan" }),
+        buildFighter({ attack_earth: 20, name: "Cartman" }),
+      ],
+    });
+
+    const result = planEquipmentProgression(snapshot, state, item, undefined, [
+      {
+        itemCode: "yellow_slimeball",
+        source: { monster: buildMonster(), type: "hunt" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap()).toEqual({ activities: [], state });
+  });
+
+  it("rejects a gather material when no character has the required skill", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "copper_ore", quantity: 3 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const resource = buildResource({ level: 2 });
+    const snapshot = buildSnapshot({
+      characters: [buildCharacter({ mining_level: 1 })],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      { itemCode: "copper_ore", source: { resource, type: "gather" } },
+    ]);
+
+    expect(result._unsafeUnwrapErr()).toEqual(
+      new NoEligibleGathererError("copper_rocks", "mining", 2),
+    );
+  });
+
+  it("rejects a resolved source that does not produce the missing material", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "copper_ore", quantity: 3 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const source = buildResource({
+      drops: [{ code: "iron_ore", max_quantity: 1, min_quantity: 1, rate: 1 }],
+    });
+
+    const result = planEquipmentProgression(buildSnapshot(), buildState(), item, undefined, [
+      { itemCode: "copper_ore", source: { resource: source, type: "gather" } },
+    ]);
+
+    expect(result._unsafeUnwrapErr()).toMatchObject({
+      itemCode: "copper_ore",
+      message: "Source copper_rocks does not produce equipment material copper_ore",
+      name: "InvalidEquipmentMaterialSourceError",
+      sourceCode: "copper_rocks",
+    });
+  });
+
+  it("rejects a resolved monster that does not produce the missing material", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "yellow_slimeball", quantity: 2 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const monster = buildMonster({
+      drops: [{ code: "wolf_hair", max_quantity: 1, min_quantity: 1, rate: 1 }],
+    });
+
+    const result = planEquipmentProgression(buildSnapshot(), buildState(), item, undefined, [
+      { itemCode: "yellow_slimeball", source: { monster, type: "hunt" } },
+    ]);
+
+    expect(result._unsafeUnwrapErr()).toEqual(
+      new InvalidEquipmentMaterialSourceError("yellow_slimeball", "yellow_slime"),
+    );
+  });
+
+  it("rejects a monster material when no character can hunt it safely", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "yellow_slimeball", quantity: 2 }],
+        level: 5,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const snapshot = buildSnapshot({
+      characters: [buildFighter({ attack_earth: 0, hp: 10 })],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      {
+        itemCode: "yellow_slimeball",
+        source: { monster: buildMonster({ attack_earth: 20, hp: 200 }), type: "hunt" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrapErr()).toBeInstanceOf(NoSafeEquipmentMaterialHunterError);
+    expect(result._unsafeUnwrapErr()).toMatchObject({
+      itemCode: "yellow_slimeball",
+      message: "No character can safely hunt yellow_slime for yellow_slimeball",
+      monsterCode: "yellow_slime",
+      name: "NoSafeEquipmentMaterialHunterError",
+    });
+  });
+
+  it("does not acquire materials before the target crafting level is reached", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "copper_ore", quantity: 3 }],
+        level: 6,
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+
+    const result = planEquipmentProgression(buildSnapshot(), buildState(), item, undefined, [
+      {
+        itemCode: "copper_ore",
+        source: { resource: buildResource(), type: "gather" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      itemCode: "copper_dagger",
+      quantity: 1,
+      type: "craftItem",
+    });
+  });
+
+  it("acquires materials for a recipe whose missing level defaults to zero", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "copper_ore", quantity: 3 }],
+        quantity: 1,
+        skill: "weaponcrafting",
+      },
+    });
+    const snapshot = buildSnapshot({
+      characters: [buildCharacter({ mining_level: 1, weaponcrafting_level: 0 })],
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item, undefined, [
+      {
+        itemCode: "copper_ore",
+        source: { resource: buildResource(), type: "gather" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      resourceCode: "copper_rocks",
+      type: "farmResource",
+    });
+  });
+
+  it("does not acquire materials for an item without a crafting skill", () => {
+    const item = buildItem({
+      craft: {
+        items: [{ code: "copper_ore", quantity: 3 }],
+        level: 0,
+        quantity: 1,
+      },
+    });
+
+    const result = planEquipmentProgression(buildSnapshot(), buildState(), item, undefined, [
+      {
+        itemCode: "copper_ore",
+        source: { resource: buildResource(), type: "gather" },
+      },
+    ]);
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      itemCode: "copper_dagger",
+      type: "equipItem",
+    });
+  });
+
   it("ignores unrelated bank items when deciding whether to craft", () => {
     const result = planEquipmentProgression(
       buildSnapshot({ bank: [{ code: "iron_ore", quantity: 100 }] }),
@@ -259,13 +747,22 @@ describe("planEquipmentProgression", () => {
 
   it("uses equip to expose a missing-item Blocker for a non-craftable target", () => {
     const item = buildItem();
+    const state = buildState();
     delete item.craft;
 
-    const result = planEquipmentProgression(buildSnapshot(), buildState(), item);
+    const result = planEquipmentProgression(buildSnapshot(), state, item);
 
-    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
-      itemCode: "copper_dagger",
-      type: "equipItem",
+    expect(result._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: { itemCode: "copper_dagger", type: "equipItem" },
+          characterName: "Stan",
+          consumes: [{ itemCode: "copper_dagger" }],
+          goalId: "equip-stan-dagger",
+          produces: [],
+        },
+      ],
+      state,
     });
   });
 

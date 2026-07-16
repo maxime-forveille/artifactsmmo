@@ -5,6 +5,7 @@ import type { ActivityAssignment, OrchestratorState } from "./orchestratorState.
 import type { CrewSnapshot } from "./crewSnapshot.js";
 import {
   planEquipmentProgression,
+  type EquipmentMaterialSource,
   type EquipmentProgressionError,
   type PreviousActivityOutcome,
 } from "./equipmentProgression.js";
@@ -24,6 +25,11 @@ type ConfiguredGoalPlan = Readonly<{
 export type ResolvedGoalItem = Readonly<{
   goalId: string;
   item: Item;
+}>;
+
+export type ResolvedGoalMaterialSource = Readonly<{
+  goalId: string;
+  materialSource: EquipmentMaterialSource;
 }>;
 
 export type ResolvedGoalResource = Readonly<{
@@ -64,11 +70,17 @@ export type ConfiguredGoalPlanner = (
 export const createConfiguredGoalPlanner = (
   resolvedItems: readonly ResolvedGoalItem[],
   resolvedResources: readonly ResolvedGoalResource[],
+  resolvedMaterialSources: readonly ResolvedGoalMaterialSource[] = [],
 ): ConfiguredGoalPlanner => {
   const itemsByGoalId = new Map(resolvedItems.map(({ goalId, item }) => [goalId, item]));
   const resourcesByGoalId = new Map(
     resolvedResources.map(({ goalId, resource }) => [goalId, resource]),
   );
+  const materialSourcesByGoalId = resolvedMaterialSources.reduce((byGoalId, resolvedSource) => {
+    const existing = byGoalId.get(resolvedSource.goalId) ?? [];
+    byGoalId.set(resolvedSource.goalId, [...existing, resolvedSource]);
+    return byGoalId;
+  }, new Map<string, readonly ResolvedGoalMaterialSource[]>());
 
   return (snapshot, state, previousOutcome) => {
     const activities: ActivityAssignment[] = [];
@@ -84,7 +96,15 @@ export const createConfiguredGoalPlanner = (
 
               return item === undefined
                 ? err(new GoalItemNotResolvedError(goal.id))
-                : planEquipmentProgression(snapshot, planningState, item, previousOutcome);
+                : planEquipmentProgression(
+                    snapshot,
+                    planningState,
+                    item,
+                    previousOutcome,
+                    (materialSourcesByGoalId.get(goal.id) ?? []).map(
+                      ({ materialSource }) => materialSource,
+                    ),
+                  );
             })()
           : (() => {
               const resource = resourcesByGoalId.get(goal.id);

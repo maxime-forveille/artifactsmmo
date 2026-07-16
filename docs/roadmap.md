@@ -77,6 +77,9 @@ new orchestration Interface.
 - [x] Return typed Blockers for missing prerequisites.
 - [x] Run explicit equipment Goals through targeted withdraw, craft, and equip
       steps, including direct recipe materials already in the bank.
+- [x] Acquire a missing direct raw material from one unambiguous gather or hunt
+      source with an eligible crew member.
+- [ ] Expand equipment prerequisites through craftable material intermediates.
 
 ### 3. Rolling scheduler
 

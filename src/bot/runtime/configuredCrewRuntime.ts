@@ -4,6 +4,7 @@ import {
   createConfiguredGoalPlanner,
   type ConfiguredGoalPlannerError,
   type ResolvedGoalItem,
+  type ResolvedGoalMaterialSource,
   type ResolvedGoalResource,
 } from "../orchestration/configuredGoalPlanner.js";
 import { createCrewRuntime, type CrewRuntimeStartError } from "./crewRuntime.js";
@@ -37,6 +38,49 @@ export const resolveConfiguredItems = (
     ),
   );
 
+export const resolveEquipmentMaterialSources = (
+  client: Pick<ArtifactsClient, "getMonsters" | "getResources">,
+  resolvedItems: readonly ResolvedGoalItem[],
+): ResultAsync<readonly ResolvedGoalMaterialSource[], ArtifactsApiError> =>
+  ResultAsync.combine(
+    resolvedItems.flatMap(({ goalId, item }) =>
+      [...new Set((item.craft?.items ?? []).map((material) => material.code))].map((itemCode) =>
+        ResultAsync.combine([
+          client.getMonsters({ drop: itemCode, size: 100 }),
+          client.getResources({ drop: itemCode, size: 100 }),
+        ]).map(([monsters, resources]): ResolvedGoalMaterialSource | undefined => {
+          if (monsters.data.length + resources.data.length !== 1) {
+            return undefined;
+          }
+
+          const [monster] = monsters.data;
+
+          if (monster !== undefined) {
+            return {
+              goalId,
+              materialSource: {
+                itemCode,
+                source: { monster, type: "hunt" },
+              },
+            };
+          }
+
+          const [resource] = resources.data;
+
+          return resource === undefined
+            ? undefined
+            : {
+                goalId,
+                materialSource: {
+                  itemCode,
+                  source: { resource, type: "gather" },
+                },
+              };
+        }),
+      ),
+    ),
+  ).map((sources) => sources.filter((source) => source !== undefined));
+
 export const resolveConfiguredResources = (
   client: Pick<ArtifactsClient, "getResource">,
   config: OrchestrationConfig,
@@ -62,14 +106,20 @@ export const createConfiguredCrewRuntime = (
   RollingActivityCoordinator<ConfiguredGoalPlannerError, CrewRuntimeStartError>,
   ArtifactsApiError
 > =>
-  ResultAsync.combine([
-    resolveConfiguredItems(client, options.config),
-    resolveConfiguredResources(client, options.config),
-  ]).andThen(([resolvedItems, resolvedResources]) =>
-    createCrewRuntime(client, {
-      initialState: buildInitialOrchestratorState(options.config),
-      plan: createConfiguredGoalPlanner(resolvedItems, resolvedResources),
-      reportError: options.reportError,
-      waitBeforeRetry: options.waitBeforeRetry,
-    }),
+  resolveConfiguredItems(client, options.config).andThen((resolvedItems) =>
+    ResultAsync.combine([
+      resolveConfiguredResources(client, options.config),
+      resolveEquipmentMaterialSources(client, resolvedItems),
+    ]).andThen(([resolvedResources, resolvedMaterialSources]) =>
+      createCrewRuntime(client, {
+        initialState: buildInitialOrchestratorState(options.config),
+        plan: createConfiguredGoalPlanner(
+          resolvedItems,
+          resolvedResources,
+          resolvedMaterialSources,
+        ),
+        reportError: options.reportError,
+        waitBeforeRetry: options.waitBeforeRetry,
+      }),
+    ),
   );

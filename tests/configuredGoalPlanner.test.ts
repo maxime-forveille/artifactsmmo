@@ -27,6 +27,7 @@ const buildCharacter = (name: string): Character => ({
   mining_level: 10,
   name,
   weapon_slot: "wooden_stick",
+  weaponcrafting_level: 10,
   woodcutting_level: 10,
 });
 
@@ -184,6 +185,46 @@ describe("createConfiguredGoalPlanner", () => {
       ],
       state,
     });
+  });
+
+  it("uses a resolved material source for an equipment prerequisite", () => {
+    const equipmentGoal = buildEquipmentGoal();
+    const item = buildItem();
+    item.craft = {
+      items: [{ code: "copper_ore", quantity: 2 }],
+      level: 5,
+      quantity: 1,
+      skill: "weaponcrafting",
+    };
+    const planner = createConfiguredGoalPlanner(
+      [{ goalId: equipmentGoal.id, item }],
+      [],
+      [
+        {
+          goalId: equipmentGoal.id,
+          materialSource: {
+            itemCode: "copper_ore",
+            source: { resource: copperResource, type: "gather" },
+          },
+        },
+      ],
+    );
+    const snapshot = {
+      ...buildSnapshot(),
+      characters: [buildCharacter("Stan"), buildCharacter("Cartman")],
+    };
+
+    const result = planner(snapshot, buildState([equipmentGoal]));
+
+    expect(result._unsafeUnwrap().activities).toEqual([
+      {
+        activity: { resourceCode: "copper_rocks", type: "farmResource" },
+        characterName: "Cartman",
+        consumes: [],
+        goalId: "equip-stan-dagger",
+        produces: [{ itemCode: "copper_ore" }],
+      },
+    ]);
   });
 
   it("continues lower-priority work after an equipment Activity is blocked", () => {
