@@ -75,7 +75,8 @@ new orchestration Interface.
 - [x] Add targeted equip execution that does not craft missing equipment
       recursively.
 - [x] Return typed Blockers for missing prerequisites.
-- [x] Run explicit equipment Goals through targeted craft and equip steps.
+- [x] Run explicit equipment Goals through targeted withdraw, craft, and equip
+      steps.
 
 ### 3. Rolling scheduler
 

@@ -19,8 +19,15 @@ export type HuntMonsterActivity = Readonly<{
   type: "huntMonster";
 }>;
 
+export type WithdrawItemActivity = Readonly<{
+  itemCode: string;
+  quantity: number;
+  type: "withdrawItem";
+}>;
+
 export type Activity =
   | CraftItemActivity
   | EquipItemActivity
   | FarmResourceActivity
-  | HuntMonsterActivity;
+  | HuntMonsterActivity
+  | WithdrawItemActivity;

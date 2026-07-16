@@ -1,14 +1,18 @@
 import { err, ok, type Result } from "neverthrow";
 
 import type { components } from "../../client/schema.js";
-import type { CraftItemActivity, EquipItemActivity } from "../activities/activity.js";
+import type {
+  CraftItemActivity,
+  EquipItemActivity,
+  WithdrawItemActivity,
+} from "../activities/activity.js";
 import { EQUIP_SLOT_BY_ITEM_TYPE, equippedItemInSlot } from "../gear.js";
 import { heldQuantity } from "../inventory.js";
 import type { CrewSnapshot } from "./crewSnapshot.js";
 import type { ActivityAssignment, OrchestratorState } from "./orchestratorState.js";
 
 type Item = Readonly<components["schemas"]["ItemSchema"]>;
-type EquipmentActivity = CraftItemActivity | EquipItemActivity;
+type EquipmentActivity = CraftItemActivity | EquipItemActivity | WithdrawItemActivity;
 
 export type EquipmentProgressionPlan = Readonly<{
   activities: readonly ActivityAssignment<EquipmentActivity>[];
@@ -115,17 +119,20 @@ export const planEquipmentProgression = (
 
   const isHeld = heldQuantity(character, item.code) > 0;
   const isBanked = bankQuantity(snapshot, item.code) > 0;
-  const shouldCraft = !isHeld && !isBanked && item.craft?.skill !== undefined;
-  const activity: EquipmentActivity = shouldCraft
-    ? { itemCode: item.code, quantity: 1, type: "craftItem" }
-    : { itemCode: item.code, type: "equipItem" };
+  const activity: EquipmentActivity = isHeld
+    ? { itemCode: item.code, type: "equipItem" }
+    : isBanked
+      ? { itemCode: item.code, quantity: 1, type: "withdrawItem" }
+      : item.craft?.skill !== undefined
+        ? { itemCode: item.code, quantity: 1, type: "craftItem" }
+        : { itemCode: item.code, type: "equipItem" };
 
   return ok({
     activities: [
       {
         activity,
         characterName: character.name,
-        consumes: activity.type === "equipItem" ? [{ itemCode: item.code }] : [],
+        consumes: activity.type === "craftItem" ? [] : [{ itemCode: item.code }],
         goalId: goal.id,
         produces: activity.type === "craftItem" ? [{ itemCode: item.code }] : [],
       },

@@ -59,8 +59,9 @@ read per crew member at startup.
 
 `runtime/activityDispatcher.ts` executes one already-selected bounded Activity
 with an existing Character Agent. It dispatches `farmResource` and `huntMonster`
-to their existing cycles, plus `craftItem` and `equipItem` to targeted execution;
-scheduling, Reservations, retry, and policy remain outside the dispatcher.
+to their existing cycles, plus `craftItem`, `equipItem`, and `withdrawItem` to
+targeted execution; scheduling, Reservations, retry, and policy remain outside
+the dispatcher.
 
 `runtime/activityLauncher.ts` atomically reserves an idle character and starts
 one dispatched Activity. It retries failures classified as transient without
@@ -123,7 +124,8 @@ type Activity =
   | { type: "farmResource"; resourceCode: string }
   | { type: "huntMonster"; monsterCode: string }
   | { type: "craftItem"; itemCode: string; quantity: number }
-  | { type: "equipItem"; itemCode: string };
+  | { type: "equipItem"; itemCode: string }
+  | { type: "withdrawItem"; itemCode: string; quantity: number };
 ```
 
 Activities are complete operational cycles, not individual game Actions:
@@ -131,7 +133,8 @@ Activities are complete operational cycles, not individual game Actions:
 - `farmResource`: move, gather until full, then bank;
 - `huntMonster`: move, fight/rest until full, then bank;
 - `craftItem`: validate held inputs, move to the workshop, and craft;
-- `equipItem`: replace the current slot occupant with one held target.
+- `equipItem`: replace the current slot occupant with one held target;
+- `withdrawItem`: validate bank stock and inventory room, then retrieve an item.
 
 Movement, gathering, fighting, resting, withdrawing, and depositing remain
 internal Actions. They are not scheduler-visible Activities.
@@ -172,9 +175,10 @@ Goal, avoids work already reserved, excludes busy characters, and otherwise
 proposes one `farmResource` Activity for the strongest eligible gatherer.
 
 `orchestration/equipmentProgression.ts` advances an explicit character equipment
-Goal. It crafts an absent craftable target, equips it once held, and completes
-when the expected slot contains it. A blocked craft or equip stays idle for a
-later planner layer to turn into material, profession, or retrieval Goals.
+Goal. It retrieves a banked target, crafts an absent craftable target, equips it
+once held, and completes when the expected slot contains it. A blocked craft or
+equip stays idle for a later planner layer to turn into material or profession
+Goals.
 
 `orchestration/configuredGoalPlanner.ts` applies both transitions in global
 priority order. Proposals act as temporary Reservations during the same
@@ -226,8 +230,8 @@ forever.
 ## Manual control
 
 `orchestration.json` is the opt-in crew assignment source. When present, the
-entrypoint validates its ordered Goals, resolves every resource, and starts the
-rolling orchestrator. Goal priority, bank thresholds, and resource codes must
+entrypoint validates its ordered Goals, resolves every resource and item, and
+starts the rolling orchestrator. Goal priority, bank thresholds, and resource codes must
 all be explicit; the Adapter supplies no defaults. The file remains ignored as
 account-specific runtime configuration.
 

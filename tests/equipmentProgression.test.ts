@@ -130,16 +130,25 @@ describe("planEquipmentProgression", () => {
     });
   });
 
-  it("does not craft a duplicate target that is already in the bank", () => {
+  it("withdraws a banked target instead of crafting a duplicate", () => {
+    const state = buildState();
     const result = planEquipmentProgression(
       buildSnapshot({ bank: [{ code: "copper_dagger", quantity: 1 }] }),
-      buildState(),
+      state,
       buildItem(),
     );
 
-    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
-      itemCode: "copper_dagger",
-      type: "equipItem",
+    expect(result._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: { itemCode: "copper_dagger", quantity: 1, type: "withdrawItem" },
+          characterName: "Stan",
+          consumes: [{ itemCode: "copper_dagger" }],
+          goalId: "equip-stan-dagger",
+          produces: [],
+        },
+      ],
+      state,
     });
   });
 

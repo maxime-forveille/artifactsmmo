@@ -104,10 +104,10 @@ requires `id`, `itemCode`, `minimumBankQuantity`, and `resourceCode`. An
 }
 ```
 
-The equipment Goal crafts the target when possible, then equips it once held.
-A missing material, insufficient profession level, or banked target currently
-leaves the Goal blocked; automatic prerequisite farming and bank retrieval are
-the next orchestration slices.
+The equipment Goal retrieves a banked target, crafts it when possible, then
+equips it once held. Missing materials or insufficient profession levels still
+leave the Goal blocked; automatic prerequisite farming is the next
+orchestration slice.
 
 When `orchestration.json` is absent, `tasks.json` remains the transitional human
 Adapter. It is validated with Valibot and reloaded every 10 seconds without

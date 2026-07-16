@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runActivity } from "../src/bot/runtime/activityDispatcher.js";
 import type { components } from "../src/client/schema.js";
 
+type BankPage = components["schemas"]["DataPage_SimpleItemSchema_"];
 type Character = components["schemas"]["CharacterSchema"];
 type Cooldown = components["schemas"]["CooldownSchema"];
 type Item = components["schemas"]["ItemSchema"];
@@ -44,8 +45,7 @@ const buildPage = (mapId: number): MapPage => ({
   total: 1,
 });
 
-const buildDependencies = () => {
-  const character = buildCharacter();
+const buildDependencies = (character = buildCharacter()) => {
   const getMaps = vi.fn((query: MapQuery = {}) =>
     okAsync(buildPage(query.content_type === "bank" ? BANK_MAP_ID : TARGET_MAP_ID)),
   );
@@ -57,6 +57,15 @@ const buildDependencies = () => {
     level: 5,
     type: "weapon",
   };
+  const getBankItems = vi.fn(() =>
+    okAsync({
+      data: [{ code: "copper_dagger", quantity: 1 }],
+      page: 1,
+      pages: 1,
+      size: 50,
+      total: 1,
+    } satisfies BankPage),
+  );
   const getItem = vi.fn(() => okAsync({ data: item }));
 
   return {
@@ -74,8 +83,12 @@ const buildDependencies = () => {
       moveTo: vi.fn(() => okAsync(undefined)),
       rest: vi.fn(),
       unequip: vi.fn(),
+      withdrawItems: vi.fn(() =>
+        okAsync({ bank: [], character, cooldown: buildCooldown(), items: [] }),
+      ),
     },
-    client: { getItem, getMaps },
+    client: { getBankItems, getItem, getMaps },
+    getBankItems,
     getItem,
     getMaps,
   };
@@ -115,6 +128,26 @@ describe("runActivity", () => {
     expect(agent.unequip).not.toHaveBeenCalled();
     expect(agent.gather).not.toHaveBeenCalled();
     expect(agent.fight).not.toHaveBeenCalled();
+  });
+
+  it("dispatches withdrawItem to one targeted bank withdrawal", async () => {
+    const character = {
+      ...buildCharacter(),
+      inventory: [],
+      inventory_max_items: 20,
+    };
+    const { agent, client, getBankItems, getMaps } = buildDependencies(character);
+
+    const result = await runActivity(client, agent, {
+      itemCode: "copper_dagger",
+      quantity: 1,
+      type: "withdrawItem",
+    });
+
+    expect(result.isOk()).toBe(true);
+    expect(getBankItems).toHaveBeenCalledWith({ item_code: "copper_dagger" });
+    expect(getMaps).toHaveBeenCalledWith({ content_code: "bank", content_type: "bank" });
+    expect(agent.withdrawItems).toHaveBeenCalledWith([{ code: "copper_dagger", quantity: 1 }]);
   });
 
   it("dispatches farmResource to one farming cycle with the resource code", async () => {

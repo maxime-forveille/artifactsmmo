@@ -6,7 +6,9 @@ import type {
   EquipItemActivity,
   FarmResourceActivity,
   HuntMonsterActivity,
+  WithdrawItemActivity,
 } from "../activities/activity.js";
+import { runWithdrawItemActivity, type WithdrawItemError } from "../activities/banking.js";
 import { runCraftItemActivity, type CraftItemExecutionError } from "../activities/crafting.js";
 import { runEquipItemActivity, type EquipItemExecutionError } from "../activities/equipping.js";
 import type { FarmingError } from "../activities/farming.js";
@@ -19,14 +21,16 @@ export type ExecutableActivity =
   | CraftItemActivity
   | EquipItemActivity
   | FarmResourceActivity
-  | HuntMonsterActivity;
+  | HuntMonsterActivity
+  | WithdrawItemActivity;
 export type ActivityExecutionError =
   | CraftItemExecutionError
   | EquipItemExecutionError
   | FarmingError
-  | HuntingError;
+  | HuntingError
+  | WithdrawItemError;
 
-type ActivityClient = Pick<ArtifactsClient, "getItem" | "getMaps">;
+type ActivityClient = Pick<ArtifactsClient, "getBankItems" | "getItem" | "getMaps">;
 type ActivityAgent = Pick<
   CharacterAgent,
   | "craft"
@@ -38,6 +42,7 @@ type ActivityAgent = Pick<
   | "moveTo"
   | "rest"
   | "unequip"
+  | "withdrawItems"
 >;
 
 /**
@@ -62,6 +67,9 @@ export const runActivity = (
     }
     case "huntMonster": {
       return runHuntingCycle(client, agent, activity.monsterCode);
+    }
+    case "withdrawItem": {
+      return runWithdrawItemActivity(client, agent, activity);
     }
   }
 };
