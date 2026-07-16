@@ -1,4 +1,4 @@
-# Artifacts MMO Bot
+# Artifacts MMO Crew
 
 Personal TypeScript bot for coordinating a five-character crew in
 [Artifacts MMO](https://artifactsmmo.com/).
