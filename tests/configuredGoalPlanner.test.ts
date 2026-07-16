@@ -7,6 +7,7 @@ import {
 } from '../src/bot/orchestration/configuredGoalPlanner.js';
 import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
 import type {
+  ActiveGoal,
   EquipItemGoal,
   OrchestratorState,
   ReplenishBankItemGoal,
@@ -31,17 +32,22 @@ const buildCharacter = (name: string): Character => ({
   woodcutting_level: 10,
 });
 
-const buildGoal = (id: string, itemCode: string): ReplenishBankItemGoal => ({
+const buildGoal = (
+  id: string,
+  itemCode: string,
+): ActiveGoal & ReplenishBankItemGoal => ({
   id,
   itemCode,
   minimumBankQuantity: 50,
+  origin: 'configured',
   type: 'replenishBankItem',
 });
 
-const buildEquipmentGoal = (): EquipItemGoal => ({
+const buildEquipmentGoal = (): ActiveGoal & EquipItemGoal => ({
   characterName: 'Stan',
   id: 'equip-stan-dagger',
   itemCode: 'copper_dagger',
+  origin: 'configured',
   type: 'equipItem',
 });
 
@@ -194,10 +200,11 @@ describe('createConfiguredGoalPlanner', () => {
 
   it('does not reserve the same bank stock for simultaneous equipment Goals', () => {
     const stanGoal = buildEquipmentGoal();
-    const kyleGoal: EquipItemGoal = {
+    const kyleGoal: ActiveGoal & EquipItemGoal = {
       characterName: 'Kyle',
       id: 'equip-kyle-sword',
       itemCode: 'copper_sword',
+      origin: 'configured',
       type: 'equipItem',
     };
     const dagger = {

@@ -9,6 +9,7 @@ import {
   planEquipmentProgression,
 } from '../src/bot/orchestration/equipmentProgression.js';
 import type {
+  ActiveGoal,
   EquipItemGoal,
   OrchestratorState,
   Reservation,
@@ -21,10 +22,13 @@ type Item = components['schemas']['ItemSchema'];
 type Monster = components['schemas']['MonsterSchema'];
 type Resource = components['schemas']['ResourceSchema'];
 
-const buildGoal = (overrides: Partial<EquipItemGoal> = {}): EquipItemGoal => ({
+const buildGoal = (
+  overrides: Partial<EquipItemGoal> = {},
+): ActiveGoal & EquipItemGoal => ({
   characterName: 'Stan',
   id: 'equip-stan-dagger',
   itemCode: 'copper_dagger',
+  origin: 'configured',
   type: 'equipItem',
   ...overrides,
 });
@@ -1850,6 +1854,7 @@ describe('planEquipmentProgression', () => {
           id: 'replenish-copper',
           itemCode: 'copper_ore',
           minimumBankQuantity: 50,
+          origin: 'configured',
           type: 'replenishBankItem',
         },
       ],

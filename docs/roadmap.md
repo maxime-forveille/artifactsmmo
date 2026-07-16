@@ -178,7 +178,7 @@ source of game truth or a place where strategy is implemented.
 
 ### Durable orchestrator state
 
-- [ ] Introduce an active-Goal representation that retains Goal data, priority,
+- [x] Introduce an active-Goal representation that retains Goal data, priority,
       `parentGoalId`, origin, originating Goal Rule, and decision reason.
 - [ ] Define an `OrchestratorStateRepository` contract with in-memory and SQLite
       implementations.

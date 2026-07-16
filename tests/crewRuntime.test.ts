@@ -76,6 +76,7 @@ const buildState = (): OrchestratorState => ({
       id: 'goal-copper',
       itemCode: 'copper_ore',
       minimumBankQuantity: 50,
+      origin: 'configured',
       type: 'replenishBankItem',
     },
   ],

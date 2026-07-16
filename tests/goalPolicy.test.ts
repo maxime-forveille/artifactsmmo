@@ -13,6 +13,7 @@ import {
 } from '../src/bot/orchestration/goalPolicy.js';
 import type {
   EquipItemGoal,
+  Goal,
   OrchestratorState,
   ReachCombatLevelGoal,
   ReplenishBankItemGoal,
@@ -44,6 +45,13 @@ const buildReplenishmentGoal = (
   itemCode,
   minimumBankQuantity: 50,
   type: 'replenishBankItem',
+});
+
+const configuredGoal = <TGoal extends Goal>(
+  goal: TGoal,
+): TGoal & Readonly<{ origin: 'configured' }> => ({
+  ...goal,
+  origin: 'configured',
 });
 
 const buildState = (
@@ -324,8 +332,8 @@ describe('selectCompatibleGoals', () => {
     const parentGoal = buildEquipGoal('blocked-goal', 'Stan', 'copper_dagger');
     const state = buildState({
       goals: [
-        parentGoal,
-        buildReplenishmentGoal('active-copper', 'copper_ore'),
+        configuredGoal(parentGoal),
+        configuredGoal(buildReplenishmentGoal('active-copper', 'copper_ore')),
       ],
       reservations: [
         {
@@ -413,7 +421,9 @@ describe('selectCompatibleGoals', () => {
 
   it('rejects a combat Goal when that character already has an active Goal', () => {
     const state = buildState({
-      goals: [buildEquipGoal('equip-stan', 'Stan', 'copper_dagger')],
+      goals: [
+        configuredGoal(buildEquipGoal('equip-stan', 'Stan', 'copper_dagger')),
+      ],
     });
     const candidate = {
       ...buildCandidate({
@@ -453,7 +463,9 @@ describe('selectCompatibleGoals', () => {
 
   it('treats Goal ids as unique across Goal types', () => {
     const state = buildState({
-      goals: [buildReplenishmentGoal('shared-id', 'copper_ore')],
+      goals: [
+        configuredGoal(buildReplenishmentGoal('shared-id', 'copper_ore')),
+      ],
     });
     const candidate = {
       ...buildCandidate({
@@ -496,7 +508,9 @@ describe('selectCompatibleGoals', () => {
   });
 
   it('rejects an equipment Goal equivalent to an active Goal', () => {
-    const active = buildEquipGoal('active', 'Stan', 'copper_dagger');
+    const active = configuredGoal(
+      buildEquipGoal('active', 'Stan', 'copper_dagger'),
+    );
     const candidate = {
       ...buildCandidate({
         goal: buildEquipGoal('duplicate', 'Stan', 'copper_dagger'),
@@ -510,7 +524,9 @@ describe('selectCompatibleGoals', () => {
   });
 
   it('rejects different equipment Goals for an active character', () => {
-    const active = buildEquipGoal('active', 'Stan', 'copper_dagger');
+    const active = configuredGoal(
+      buildEquipGoal('active', 'Stan', 'copper_dagger'),
+    );
     const candidate = {
       ...buildCandidate({
         goal: buildEquipGoal('different-item', 'Stan', 'copper_helmet'),

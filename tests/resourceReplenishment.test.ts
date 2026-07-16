@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
 import type {
+  ActiveGoal,
   OrchestratorState,
   ReplenishBankItemGoal,
   Reservation,
@@ -23,10 +24,11 @@ const buildCharacter = (
 
 const buildGoal = (
   overrides: Partial<ReplenishBankItemGoal> = {},
-): ReplenishBankItemGoal => ({
+): ActiveGoal & ReplenishBankItemGoal => ({
   id: 'replenish-copper',
   itemCode: 'copper_ore',
   minimumBankQuantity: 50,
+  origin: 'configured',
   type: 'replenishBankItem',
   ...overrides,
 });
@@ -374,6 +376,7 @@ describe('planResourceReplenishment', () => {
           characterName: 'Stan',
           id: 'equip-stan-dagger',
           itemCode: 'copper_dagger',
+          origin: 'configured',
           type: 'equipItem',
         },
       ],

@@ -8,6 +8,7 @@ import {
 } from '../src/bot/orchestration/combatProgression.js';
 import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
 import type {
+  ActiveGoal,
   OrchestratorState,
   ReachCombatLevelGoal,
   Reservation,
@@ -55,9 +56,10 @@ const buildMonster = (overrides: Partial<Monster> = {}): Monster => ({
 
 const buildGoal = (
   overrides: Partial<ReachCombatLevelGoal> = {},
-): ReachCombatLevelGoal => ({
+): ActiveGoal & ReachCombatLevelGoal => ({
   characterName: 'Stan',
   id: 'reachCombatLevel:Stan:6',
+  origin: 'configured',
   targetLevel: 6,
   type: 'reachCombatLevel',
   ...overrides,
@@ -202,6 +204,7 @@ describe('planCombatProgression', () => {
           id: 'replenish-copper',
           itemCode: 'copper_ore',
           minimumBankQuantity: 50,
+          origin: 'configured',
           type: 'replenishBankItem',
         },
       ],

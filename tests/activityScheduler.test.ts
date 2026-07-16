@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { GoalNotFoundError } from '../src/bot/orchestration/activityLifecycle.js';
 import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
 import type {
+  ActiveGoal,
   ActivityAssignment,
   OrchestratorState,
   ReplenishBankItemGoal,
@@ -19,10 +20,14 @@ import {
 class TestActivityError extends Error {}
 class TestPlanError extends Error {}
 
-const buildGoal = (id: string, itemCode: string): ReplenishBankItemGoal => ({
+const buildGoal = (
+  id: string,
+  itemCode: string,
+): ActiveGoal & ReplenishBankItemGoal => ({
   id,
   itemCode,
   minimumBankQuantity: 50,
+  origin: 'configured',
   type: 'replenishBankItem',
 });
 

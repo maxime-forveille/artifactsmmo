@@ -11,6 +11,7 @@ import {
 } from '../src/bot/orchestration/activityLifecycle.js';
 import type {
   ActivityAssignment,
+  ActiveGoal,
   OrchestratorState,
   ReplenishBankItemGoal,
 } from '../src/bot/orchestration/orchestratorState.js';
@@ -18,10 +19,11 @@ import type {
 const buildGoal = (
   id: string,
   overrides: Partial<ReplenishBankItemGoal> = {},
-): ReplenishBankItemGoal => ({
+): ActiveGoal & ReplenishBankItemGoal => ({
   id,
   itemCode: 'copper_ore',
   minimumBankQuantity: 50,
+  origin: 'configured',
   type: 'replenishBankItem',
   ...overrides,
 });

@@ -14,6 +14,7 @@ import {
 } from '../src/bot/orchestration/activityLifecycle.js';
 import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
 import type {
+  ActiveGoal,
   ActivityAssignment,
   OrchestratorState,
   ReplenishBankItemGoal,
@@ -47,10 +48,14 @@ const createDeferred = <T>(): Deferred<T> => {
   return { promise, resolve };
 };
 
-const buildGoal = (id: string, itemCode: string): ReplenishBankItemGoal => ({
+const buildGoal = (
+  id: string,
+  itemCode: string,
+): ActiveGoal & ReplenishBankItemGoal => ({
   id,
   itemCode,
   minimumBankQuantity: 50,
+  origin: 'configured',
   type: 'replenishBankItem',
 });
 

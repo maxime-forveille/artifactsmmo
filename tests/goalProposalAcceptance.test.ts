@@ -7,6 +7,7 @@ import {
 } from '../src/bot/orchestration/goalProposalAcceptance.js';
 import type {
   EquipItemGoal,
+  Goal,
   OrchestratorState,
   ReachCombatLevelGoal,
 } from '../src/bot/orchestration/orchestratorState.js';
@@ -28,6 +29,13 @@ const buildCombatGoal = (
   type: 'reachCombatLevel',
 });
 
+const configuredGoal = <TGoal extends Goal>(
+  goal: TGoal,
+): TGoal & Readonly<{ origin: 'configured' }> => ({
+  ...goal,
+  origin: 'configured',
+});
+
 const buildProposal = (
   goal: GoalProposal['goal'],
   overrides: Partial<GoalProposal> = {},
@@ -45,10 +53,8 @@ const buildState = (
 
 describe('acceptGoalProposals', () => {
   it('appends autonomous Goals in proposal order after active Goals', () => {
-    const activeGoal = buildEquipmentGoal(
-      'equip-stan',
-      'Stan',
-      'copper_dagger',
+    const activeGoal = configuredGoal(
+      buildEquipmentGoal('equip-stan', 'Stan', 'copper_dagger'),
     );
     const firstProposal = buildProposal(
       buildCombatGoal('combat-cartman', 'Cartman', 6),
@@ -63,22 +69,32 @@ describe('acceptGoalProposals', () => {
         firstProposal,
         secondProposal,
       ])._unsafeUnwrap().goals,
-    ).toEqual([activeGoal, firstProposal.goal, secondProposal.goal]);
+    ).toEqual([
+      activeGoal,
+      {
+        ...firstProposal.goal,
+        origin: 'autonomous',
+        reason: firstProposal.reason,
+        rule: firstProposal.rule,
+      },
+      {
+        ...secondProposal.goal,
+        origin: 'autonomous',
+        reason: secondProposal.reason,
+        rule: secondProposal.rule,
+      },
+    ]);
     expect(state.goals).toEqual([activeGoal]);
   });
 
   it('inserts prerequisites immediately before their preserved parent', () => {
-    const earlierGoal = buildEquipmentGoal(
-      'equip-cartman',
-      'Cartman',
-      'copper_helmet',
+    const earlierGoal = configuredGoal(
+      buildEquipmentGoal('equip-cartman', 'Cartman', 'copper_helmet'),
     );
-    const parentGoal = buildEquipmentGoal(
-      'equip-stan',
-      'Stan',
-      'copper_dagger',
+    const parentGoal = configuredGoal(
+      buildEquipmentGoal('equip-stan', 'Stan', 'copper_dagger'),
     );
-    const laterGoal = buildCombatGoal('combat-kyle', 'Kyle', 7);
+    const laterGoal = configuredGoal(buildCombatGoal('combat-kyle', 'Kyle', 7));
     const firstPrerequisite = buildProposal(
       buildCombatGoal('combat-stan-6', 'Stan', 6),
       { parentGoalId: parentGoal.id },
@@ -90,20 +106,33 @@ describe('acceptGoalProposals', () => {
     const state = buildState({ goals: [earlierGoal, parentGoal, laterGoal] });
 
     expect(
-      acceptGoalProposals(state, [firstPrerequisite, secondPrerequisite])
-        ._unsafeUnwrap()
-        .goals.map((goal) => goal.id),
+      acceptGoalProposals(state, [
+        firstPrerequisite,
+        secondPrerequisite,
+      ])._unsafeUnwrap().goals,
     ).toEqual([
-      'equip-cartman',
-      'combat-stan-6',
-      'combat-stan-7',
-      'equip-stan',
-      'combat-kyle',
+      earlierGoal,
+      {
+        ...firstPrerequisite.goal,
+        origin: 'prerequisite',
+        parentGoalId: parentGoal.id,
+        reason: firstPrerequisite.reason,
+        rule: firstPrerequisite.rule,
+      },
+      {
+        ...secondPrerequisite.goal,
+        origin: 'prerequisite',
+        parentGoalId: parentGoal.id,
+        reason: secondPrerequisite.reason,
+        rule: secondPrerequisite.rule,
+      },
+      parentGoal,
+      laterGoal,
     ]);
   });
 
   it('is idempotent for equivalent Goals and preserves the original state', () => {
-    const activeGoal = buildCombatGoal('active-id', 'Stan', 6);
+    const activeGoal = configuredGoal(buildCombatGoal('active-id', 'Stan', 6));
     const state = buildState({ goals: [activeGoal] });
     const equivalentProposal = buildProposal(
       buildCombatGoal('different-id', 'Stan', 6),

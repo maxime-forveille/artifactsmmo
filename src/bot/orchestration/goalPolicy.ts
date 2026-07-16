@@ -1,17 +1,7 @@
 import type { CrewSnapshot } from './crewSnapshot.js';
+import type { GoalRuleName } from './goalRule.js';
 import type { Goal, OrchestratorState } from './orchestratorState.js';
 import type { WorldKnowledge } from './worldKnowledge.js';
-
-export const GOAL_RULE_NAMES = [
-  'equipmentUpgrade',
-  'combatProgression',
-  'professionProgression',
-  'gatheringProgression',
-  'bankReplenishment',
-  'bankSurplusProcessing',
-] as const;
-
-export type GoalRuleName = (typeof GOAL_RULE_NAMES)[number];
 
 export type GoalPolicyContext = Readonly<{
   snapshot: CrewSnapshot;

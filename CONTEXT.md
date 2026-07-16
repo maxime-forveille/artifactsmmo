@@ -45,9 +45,15 @@ _Avoid_: Goal, Reservation
 
 **Goal Proposal**:
 A Goal Candidate selected by policy as compatible with current Goals,
-Reservations, characters, and shared resources. A proposal becomes a persistent
+Reservations, characters, and shared resources. A proposal becomes an Active
 Goal when accepted into orchestrator state.
 _Avoid_: Activity proposal, Reservation
+
+**Active Goal**:
+An accepted finite Goal enriched with durable orchestration metadata: origin,
+priority through state ordering, and for autonomous work its Goal Rule, reason,
+and optional parent relationship. It persists across Activities and restarts.
+_Avoid_: Goal Proposal, Reservation
 
 **Goal Policy**:
 The pure decision boundary built by `createGoalPolicy` and invoked as

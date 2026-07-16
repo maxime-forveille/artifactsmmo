@@ -37,6 +37,7 @@ const buildState = (
       id: 'replenish-copper',
       itemCode: 'copper_ore',
       minimumBankQuantity: 50,
+      origin: 'configured',
       type: 'replenishBankItem',
     },
   ],

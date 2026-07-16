@@ -4,7 +4,7 @@ import * as v from 'valibot';
 import {
   GOAL_RULE_NAMES,
   type GoalRuleName,
-} from '../bot/orchestration/goalPolicy.js';
+} from '../bot/orchestration/goalRule.js';
 import type { OrchestratorState } from '../bot/orchestration/orchestratorState.js';
 
 const nonEmptyString = v.pipe(v.string(), v.minLength(1));
@@ -79,12 +79,14 @@ export const buildInitialOrchestratorState = (
           characterName: goal.characterName,
           id: goal.id,
           itemCode: goal.itemCode,
+          origin: 'configured' as const,
           type: goal.type,
         }
       : {
           id: goal.id,
           itemCode: goal.itemCode,
           minimumBankQuantity: goal.minimumBankQuantity,
+          origin: 'configured' as const,
           type: goal.type,
         },
   ),

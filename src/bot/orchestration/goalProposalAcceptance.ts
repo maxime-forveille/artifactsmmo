@@ -1,7 +1,7 @@
 import { err, ok, type Result } from 'neverthrow';
 
 import { areGoalsEquivalent, type GoalProposal } from './goalPolicy.js';
-import type { OrchestratorState } from './orchestratorState.js';
+import type { ActiveGoal, OrchestratorState } from './orchestratorState.js';
 
 export class GoalProposalParentNotFoundError extends Error {
   constructor(
@@ -15,6 +15,22 @@ export class GoalProposalParentNotFoundError extends Error {
   }
 }
 
+const activeGoalFromProposal = (proposal: GoalProposal): ActiveGoal =>
+  proposal.parentGoalId === undefined
+    ? {
+        ...proposal.goal,
+        origin: 'autonomous',
+        reason: proposal.reason,
+        rule: proposal.rule,
+      }
+    : {
+        ...proposal.goal,
+        origin: 'prerequisite',
+        parentGoalId: proposal.parentGoalId,
+        reason: proposal.reason,
+        rule: proposal.rule,
+      };
+
 const acceptGoalProposal = (
   state: OrchestratorState,
   proposal: GoalProposal,
@@ -23,8 +39,10 @@ const acceptGoalProposal = (
     return ok(state);
   }
 
+  const activeGoal = activeGoalFromProposal(proposal);
+
   if (proposal.parentGoalId === undefined) {
-    return ok({ ...state, goals: [...state.goals, proposal.goal] });
+    return ok({ ...state, goals: [...state.goals, activeGoal] });
   }
 
   const parentIndex = state.goals.findIndex(
@@ -42,7 +60,7 @@ const acceptGoalProposal = (
 
   return ok({
     ...state,
-    goals: state.goals.toSpliced(parentIndex, 0, proposal.goal),
+    goals: state.goals.toSpliced(parentIndex, 0, activeGoal),
   });
 };
 

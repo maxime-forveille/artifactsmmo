@@ -1,5 +1,7 @@
 import type { Activity } from '../activities/activity.js';
 
+import type { GoalRuleName } from './goalRule.js';
+
 export type EquipItemGoal = Readonly<{
   characterName: string;
   id: string;
@@ -23,6 +25,18 @@ export type ReplenishBankItemGoal = Readonly<{
 
 export type Goal = EquipItemGoal | ReachCombatLevelGoal | ReplenishBankItemGoal;
 
+export type ActiveGoal = Goal &
+  Readonly<
+    | { origin: 'configured' | 'override' }
+    | { origin: 'autonomous'; reason: string; rule: GoalRuleName }
+    | {
+        origin: 'prerequisite';
+        parentGoalId: string;
+        reason: string;
+        rule: GoalRuleName;
+      }
+  >;
+
 export type ItemIntent = Readonly<{
   itemCode: string;
   /** Absent when an Activity's bounded output cannot be known in advance. */
@@ -42,6 +56,6 @@ export type Reservation = ActivityAssignment;
 
 export type OrchestratorState = Readonly<{
   /** Goals are ordered from highest to lowest priority. */
-  goals: readonly Goal[];
+  goals: readonly ActiveGoal[];
   reservations: readonly Reservation[];
 }>;
