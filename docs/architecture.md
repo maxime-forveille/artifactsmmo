@@ -387,10 +387,20 @@ orchestration the default and removing this fallback.
 
 ## Persistence
 
-Orchestrator state starts in memory. SQLite is deferred until the bot needs
-history, aggregation, or restart continuity that the Artifacts API cannot
-provide directly. Introducing persistence later should not change the pure
-policy Interface.
+SQLite will be introduced before autonomous orchestration becomes the default.
+An `OrchestratorStateRepository` Adapter will persist active Goals, ordering,
+origin, and prerequisite relationships without changing pure Goal Policy or
+Activity planning Interfaces. Startup loads durable Goals, clears ephemeral
+Reservations, observes a fresh Crew Snapshot, and reconciles already-satisfied
+Goals before replanning. Character and bank state remain authoritative in the
+Artifacts API.
+
+A separate cache Adapter may share the database after durable state is proven.
+It will persist static world knowledge, rate-limit windows, and observations
+used for later decision tuning. Cache tables require per-family freshness,
+invalidation, versioning, bounded retention, and migration rules. Cached live
+account data never replaces a fresh Crew Snapshot, and persistent records never
+contain authorization data.
 
 ## Known structural debt
 

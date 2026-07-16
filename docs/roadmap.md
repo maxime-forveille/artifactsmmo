@@ -170,17 +170,63 @@ new orchestration Interface.
 - [ ] Coordinate one character gathering for another character's craft Goal.
 - [ ] Process useful bank surpluses without starving higher-priority Goals.
 
-## Persistence
+## SQLite persistence
 
-Start with in-memory orchestrator state.
+SQLite is now planned before autonomous orchestration becomes the default. It
+must remain an Adapter around pure policy and planning functions, never a new
+source of game truth or a place where strategy is implemented.
 
-Consider SQLite only when at least one of these becomes necessary:
+### Durable orchestrator state
 
-- Goals must survive process restarts;
-- request-rate history must survive development restarts;
-- decision history is needed for tuning;
-- API data no longer provides enough queryable history;
-- production and consumption rates need aggregation.
+- [ ] Introduce an active-Goal representation that retains Goal data, priority,
+      `parentGoalId`, origin, originating Goal Rule, and decision reason.
+- [ ] Define an `OrchestratorStateRepository` contract with in-memory and SQLite
+      implementations.
+- [ ] Add a versioned SQLite schema and forward-only migrations.
+- [ ] Persist Goal acceptance, completion, ordering, and prerequisite metadata
+      transactionally.
+- [ ] Load durable Goals after restart, then reconcile them against a fresh Crew
+      Snapshot before planning new work.
+- [ ] Restart with no active Reservations: runtime promises disappeared and must
+      never be reconstructed as running work.
+- [ ] Complete Goals already satisfied by observed API state before proposing
+      replacements.
+- [ ] Preserve one-shot overrides and blocked parent Goals across restarts.
+- [ ] Keep Character state, inventory, equipment, cooldowns, and bank contents
+      authoritative in the Artifacts API rather than duplicated local state.
+- [ ] Add restart and migration tests using isolated temporary databases.
+
+### Persistent cache
+
+Implement this as a separate tranche after durable orchestrator state. It may
+share the SQLite database, but it must use separate tables and an independent
+Adapter contract.
+
+- [ ] Persist static world knowledge for items, monsters, resources, and maps so
+      development restarts do not refetch unchanged catalog pages.
+- [ ] Store normalized cache keys, payload version, fetch time, and freshness
+      metadata for every cached entry.
+- [ ] Define freshness and invalidation policy per data family instead of one
+      global TTL.
+- [ ] Never cache failed responses, transport failures, or rate-limit responses
+      as successful data.
+- [ ] Keep live account data short-lived and invalidate affected bank or
+      character entries immediately after successful mutations.
+- [ ] Never use stale cached account data as an authoritative Crew Snapshot.
+- [ ] Persist request-window history needed to respect minute and hourly rate
+      limits across development restarts.
+- [ ] Persist combat and profession observations needed for later XP/time and
+      production/consumption decisions.
+- [ ] Add bounded retention and pruning for logs, observations, and expired
+      cache entries.
+- [ ] Exclude authorization tokens, request headers, and other secrets from
+      persistent cache data.
+- [ ] Add cache hit, expiry, invalidation, restart, corruption, and migration
+      tests.
+
+SQLite may later support decision-history queries and production/consumption
+aggregation, but those capabilities must consume recorded observations rather
+than move policy decisions into SQL.
 
 ## Later capabilities
 
