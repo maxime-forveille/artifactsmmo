@@ -5,7 +5,7 @@ import {
   EquipmentCharacterNotFoundError,
   InvalidEquipmentMaterialSourceError,
   InvalidEquipmentTargetError,
-  NoSafeEquipmentMaterialHunterError,
+  NoSafeEquipmentMaterialFighterError,
   planEquipmentProgression,
 } from '../src/bot/orchestration/equipmentProgression.js';
 import type {
@@ -125,7 +125,7 @@ const buildState = (
 const buildReservation = (
   overrides: Partial<Reservation> = {},
 ): Reservation => ({
-  activity: { monsterCode: 'yellow_slime', type: 'huntMonster' },
+  activity: { monsterCode: 'yellow_slime', type: 'fightMonster' },
   characterName: 'Stan',
   consumes: [],
   goalId: 'another-goal',
@@ -1249,7 +1249,7 @@ describe('planEquipmentProgression', () => {
     });
   });
 
-  it('assigns the safest hunter for a missing raw monster drop', () => {
+  it('assigns the safest fighter for a missing raw monster drop', () => {
     const item = buildItem({
       craft: {
         items: [{ code: 'yellow_slimeball', quantity: 2 }],
@@ -1290,7 +1290,7 @@ describe('planEquipmentProgression', () => {
                 },
               ],
             }),
-            type: 'hunt',
+            type: 'monster',
           },
         },
       ],
@@ -1298,7 +1298,7 @@ describe('planEquipmentProgression', () => {
 
     expect(result._unsafeUnwrap().activities).toEqual([
       {
-        activity: { monsterCode: 'yellow_slime', type: 'huntMonster' },
+        activity: { monsterCode: 'yellow_slime', type: 'fightMonster' },
         characterName: 'Stan',
         consumes: [],
         goalId: 'equip-stan-dagger',
@@ -1307,7 +1307,7 @@ describe('planEquipmentProgression', () => {
     ]);
   });
 
-  it('keeps an earlier hunter when later candidates have a worse margin', () => {
+  it('keeps an earlier fighter when later candidates have a worse margin', () => {
     const item = buildItem({
       craft: {
         items: [{ code: 'yellow_slimeball', quantity: 2 }],
@@ -1331,7 +1331,7 @@ describe('planEquipmentProgression', () => {
       [
         {
           itemCode: 'yellow_slimeball',
-          source: { monster: buildMonster(), type: 'hunt' },
+          source: { monster: buildMonster(), type: 'monster' },
         },
       ],
     );
@@ -1339,7 +1339,7 @@ describe('planEquipmentProgression', () => {
     expect(result._unsafeUnwrap().activities[0]?.characterName).toBe('Stan');
   });
 
-  it('breaks equal hunter margins by character name', () => {
+  it('breaks equal fighter margins by character name', () => {
     const item = buildItem({
       craft: {
         items: [{ code: 'yellow_slimeball', quantity: 2 }],
@@ -1363,7 +1363,7 @@ describe('planEquipmentProgression', () => {
       [
         {
           itemCode: 'yellow_slimeball',
-          source: { monster: buildMonster(), type: 'hunt' },
+          source: { monster: buildMonster(), type: 'monster' },
         },
       ],
     );
@@ -1371,7 +1371,7 @@ describe('planEquipmentProgression', () => {
     expect(result._unsafeUnwrap().activities[0]?.characterName).toBe('Cartman');
   });
 
-  it('assesses material hunters at post-rest HP', () => {
+  it('assesses material fighters at post-rest HP', () => {
     const item = buildItem({
       craft: {
         items: [{ code: 'yellow_slimeball', quantity: 2 }],
@@ -1392,14 +1392,14 @@ describe('planEquipmentProgression', () => {
       [
         {
           itemCode: 'yellow_slimeball',
-          source: { monster: buildMonster(), type: 'hunt' },
+          source: { monster: buildMonster(), type: 'monster' },
         },
       ],
     );
 
     expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
       monsterCode: 'yellow_slime',
-      type: 'huntMonster',
+      type: 'fightMonster',
     });
   });
 
@@ -1431,7 +1431,7 @@ describe('planEquipmentProgression', () => {
     expect(result._unsafeUnwrap()).toEqual({ activities: [], state });
   });
 
-  it('waits when every safe material hunter is already reserved', () => {
+  it('waits when every safe material fighter is already reserved', () => {
     const item = buildItem({
       craft: {
         items: [{ code: 'yellow_slimeball', quantity: 2 }],
@@ -1452,7 +1452,7 @@ describe('planEquipmentProgression', () => {
     const result = planEquipmentProgression(snapshot, state, item, undefined, [
       {
         itemCode: 'yellow_slimeball',
-        source: { monster: buildMonster(), type: 'hunt' },
+        source: { monster: buildMonster(), type: 'monster' },
       },
     ]);
 
@@ -1539,7 +1539,7 @@ describe('planEquipmentProgression', () => {
       buildState(),
       item,
       undefined,
-      [{ itemCode: 'yellow_slimeball', source: { monster, type: 'hunt' } }],
+      [{ itemCode: 'yellow_slimeball', source: { monster, type: 'monster' } }],
     );
 
     expect(result._unsafeUnwrapErr()).toEqual(
@@ -1550,7 +1550,7 @@ describe('planEquipmentProgression', () => {
     );
   });
 
-  it('rejects a monster material when no character can hunt it safely', () => {
+  it('rejects a monster material when no character can fight it safely', () => {
     const item = buildItem({
       craft: {
         items: [{ code: 'yellow_slimeball', quantity: 2 }],
@@ -1573,20 +1573,21 @@ describe('planEquipmentProgression', () => {
           itemCode: 'yellow_slimeball',
           source: {
             monster: buildMonster({ attack_earth: 20, hp: 200 }),
-            type: 'hunt',
+            type: 'monster',
           },
         },
       ],
     );
 
     expect(result._unsafeUnwrapErr()).toBeInstanceOf(
-      NoSafeEquipmentMaterialHunterError,
+      NoSafeEquipmentMaterialFighterError,
     );
     expect(result._unsafeUnwrapErr()).toMatchObject({
       itemCode: 'yellow_slimeball',
-      message: 'No character can safely hunt yellow_slime for yellow_slimeball',
+      message:
+        'No character can safely fight yellow_slime for yellow_slimeball',
       monsterCode: 'yellow_slime',
-      name: 'NoSafeEquipmentMaterialHunterError',
+      name: 'NoSafeEquipmentMaterialFighterError',
     });
   });
 

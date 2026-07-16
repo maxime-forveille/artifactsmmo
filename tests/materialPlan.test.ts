@@ -191,7 +191,7 @@ describe('materialsNeededFor', () => {
       {
         itemCode: 'feather',
         missingQuantity: 2,
-        source: { monsterCode: 'chicken', type: 'hunt' },
+        source: { monsterCode: 'chicken', type: 'monster' },
       },
     ]);
   });
@@ -283,7 +283,7 @@ describe('materialsNeededFor', () => {
       {
         itemCode: 'feather',
         missingQuantity: 2,
-        source: { monsterCode: 'chicken', type: 'hunt' },
+        source: { monsterCode: 'chicken', type: 'monster' },
       },
     ]);
   });
@@ -842,7 +842,7 @@ describe('planProfessionProgress', () => {
       {
         itemCode: 'feather',
         missingQuantity: 1,
-        source: { monsterCode: 'chicken', type: 'hunt' },
+        source: { monsterCode: 'chicken', type: 'monster' },
       },
     ]);
   });

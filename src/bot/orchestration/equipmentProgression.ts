@@ -6,7 +6,7 @@ import type {
   DepositItemActivity,
   EquipItemActivity,
   FarmResourceActivity,
-  HuntMonsterActivity,
+  FightMonsterActivity,
   WithdrawItemActivity,
 } from '../activities/activity.js';
 import { combatMargin, isSafeToFight } from '../combat.js';
@@ -40,13 +40,13 @@ type EquipmentActivity =
   | DepositItemActivity
   | EquipItemActivity
   | FarmResourceActivity
-  | HuntMonsterActivity
+  | FightMonsterActivity
   | WithdrawItemActivity;
 
 export type EquipmentMaterialSource = Readonly<{
   itemCode: string;
   source:
-    | Readonly<{ monster: Monster; type: 'hunt' }>
+    | Readonly<{ monster: Monster; type: 'monster' }>
     | Readonly<{ resource: Resource; type: 'gather' }>;
 }>;
 
@@ -88,13 +88,13 @@ export class InvalidEquipmentMaterialSourceError extends Error {
   }
 }
 
-export class NoSafeEquipmentMaterialHunterError extends Error {
+export class NoSafeEquipmentMaterialFighterError extends Error {
   constructor(
     public readonly itemCode: string,
     public readonly monsterCode: string,
   ) {
-    super(`No character can safely hunt ${monsterCode} for ${itemCode}`);
-    this.name = 'NoSafeEquipmentMaterialHunterError';
+    super(`No character can safely fight ${monsterCode} for ${itemCode}`);
+    this.name = 'NoSafeEquipmentMaterialFighterError';
   }
 }
 
@@ -103,7 +103,7 @@ export type EquipmentProgressionError =
   | InvalidEquipmentMaterialSourceError
   | InvalidEquipmentTargetError
   | NoEligibleGathererError
-  | NoSafeEquipmentMaterialHunterError;
+  | NoSafeEquipmentMaterialFighterError;
 
 const bankQuantity = (snapshot: CrewSnapshot, itemCode: string): number =>
   snapshot.bank
@@ -147,7 +147,7 @@ const afterRest = (character: Character): Character => ({
   hp: character.max_hp,
 });
 
-const findBestHunter = (
+const findBestFighter = (
   snapshot: CrewSnapshot,
   monster: Monster,
   excludedCharacterNames: ReadonlySet<string> = new Set(),
@@ -225,24 +225,24 @@ const acquisitionStepFor = (
     return err(new InvalidEquipmentMaterialSourceError(itemCode, monster.code));
   }
 
-  const eligibleHunter = findBestHunter(snapshot, monster);
+  const eligibleFighter = findBestFighter(snapshot, monster);
 
-  if (eligibleHunter === undefined) {
-    return err(new NoSafeEquipmentMaterialHunterError(itemCode, monster.code));
+  if (eligibleFighter === undefined) {
+    return err(new NoSafeEquipmentMaterialFighterError(itemCode, monster.code));
   }
 
-  const hunter = findBestHunter(
+  const fighter = findBestFighter(
     snapshot,
     monster,
     reservedCharacterNames(state),
   );
 
   return ok(
-    hunter === undefined
+    fighter === undefined
       ? undefined
       : {
-          activity: { monsterCode: monster.code, type: 'huntMonster' },
-          characterName: hunter.name,
+          activity: { monsterCode: monster.code, type: 'fightMonster' },
+          characterName: fighter.name,
           consumes: [],
           produces: [{ itemCode }],
         },

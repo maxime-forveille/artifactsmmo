@@ -470,7 +470,7 @@ describe('createConfiguredGoalPlanner', () => {
 
   it('does not skip an unsatisfied Goal when no Activity can start yet', () => {
     const reservation = {
-      activity: { monsterCode: 'yellow_slime', type: 'huntMonster' as const },
+      activity: { monsterCode: 'yellow_slime', type: 'fightMonster' as const },
       characterName: 'Stan',
       consumes: [],
       goalId: 'another-goal',

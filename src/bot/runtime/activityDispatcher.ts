@@ -6,7 +6,7 @@ import type {
   DepositItemActivity,
   EquipItemActivity,
   FarmResourceActivity,
-  HuntMonsterActivity,
+  FightMonsterActivity,
   WithdrawItemActivity,
 } from '../activities/activity.js';
 import {
@@ -35,7 +35,7 @@ export type ExecutableActivity =
   | DepositItemActivity
   | EquipItemActivity
   | FarmResourceActivity
-  | HuntMonsterActivity
+  | FightMonsterActivity
   | WithdrawItemActivity;
 export type ActivityExecutionError =
   | CraftItemExecutionError
@@ -86,7 +86,7 @@ export const runActivity = (
     case 'farmResource': {
       return runFarmingCycle(client, agent, activity.resourceCode);
     }
-    case 'huntMonster': {
+    case 'fightMonster': {
       return runHuntingCycle(client, agent, activity.monsterCode);
     }
     case 'withdrawItem': {

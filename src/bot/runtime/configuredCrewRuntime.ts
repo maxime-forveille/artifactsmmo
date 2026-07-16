@@ -85,7 +85,7 @@ const resolveUniqueMaterialSource = (
     if (monster !== undefined) {
       return {
         goalId,
-        materialSource: { itemCode, source: { monster, type: 'hunt' } },
+        materialSource: { itemCode, source: { monster, type: 'monster' } },
       };
     }
 

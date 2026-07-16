@@ -111,7 +111,7 @@ requires `id`, `itemCode`, `minimumBankQuantity`, and `resourceCode`. An
 
 The equipment Goal resolves its recipe tree, retrieves banked inputs, crafts
 intermediates, then crafts and equips the target. When a missing raw material
-has exactly one gather or hunt source, an eligible crew member acquires it.
+has exactly one resource or monster source, an eligible crew member acquires it.
 Eligible characters can craft intermediate or target items for one another;
 their output returns to the bank before the consumer continues. Ambiguous
 sources and insufficient crew profession levels remain blocked.

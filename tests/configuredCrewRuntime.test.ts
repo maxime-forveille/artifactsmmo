@@ -202,7 +202,7 @@ describe('resolveEquipmentMaterials', () => {
           goalId: 'equip-stan-dagger',
           materialSource: {
             itemCode: 'yellow_slimeball',
-            source: { monster, type: 'hunt' },
+            source: { monster, type: 'monster' },
           },
         },
       ],
@@ -226,7 +226,7 @@ describe('resolveEquipmentMaterials', () => {
     });
   });
 
-  it('does not choose between gather and hunt when both can produce the material', async () => {
+  it('does not choose between resource and monster sources when both can produce the material', async () => {
     const material = buildItem('slime_residue');
     const getItem = vi.fn(() => okAsync({ data: material }));
     const getMonsters = vi.fn(() =>

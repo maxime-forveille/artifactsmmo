@@ -20,9 +20,9 @@ export type FarmResourceActivity = Readonly<{
   type: 'farmResource';
 }>;
 
-export type HuntMonsterActivity = Readonly<{
+export type FightMonsterActivity = Readonly<{
   monsterCode: string;
-  type: 'huntMonster';
+  type: 'fightMonster';
 }>;
 
 export type WithdrawItemActivity = Readonly<{
@@ -36,5 +36,5 @@ export type Activity =
   | DepositItemActivity
   | EquipItemActivity
   | FarmResourceActivity
-  | HuntMonsterActivity
+  | FightMonsterActivity
   | WithdrawItemActivity;

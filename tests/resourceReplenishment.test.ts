@@ -63,7 +63,7 @@ const buildState = (
 const buildReservation = (
   overrides: Partial<Reservation> = {},
 ): Reservation => ({
-  activity: { monsterCode: 'yellow_slime', type: 'huntMonster' },
+  activity: { monsterCode: 'yellow_slime', type: 'fightMonster' },
   characterName: 'Cartman',
   consumes: [],
   goalId: 'combat-progression',

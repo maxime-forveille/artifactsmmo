@@ -31,7 +31,7 @@ type ProfessionProgressClient = MaterialPlanClient &
 /** Where a still-missing raw material could come from, if anywhere known. */
 export type MaterialSource =
   | { readonly type: 'gather'; readonly resourceCode: string }
-  | { readonly type: 'hunt'; readonly monsterCode: string }
+  | { readonly type: 'monster'; readonly monsterCode: string }
   | { readonly type: 'unknown' };
 
 /**
@@ -81,15 +81,15 @@ const sourceFor = (
             .map(
               (monster): MaterialSource => ({
                 monsterCode: monster.code,
-                type: 'hunt',
+                type: 'monster',
               }),
             )
-            .orElse((huntError) =>
-              huntError instanceof MonsterNotFoundError
+            .orElse((monsterError) =>
+              monsterError instanceof MonsterNotFoundError
                 ? okAsync<MaterialSource, ArtifactsApiError>({
                     type: 'unknown',
                   })
-                : errAsync(huntError),
+                : errAsync(monsterError),
             )
         : errAsync(error),
     );
@@ -147,7 +147,7 @@ const materialsNeededForItem = (
  * Read-only, side-effect-free version of `ensureHeldItem`
  * (`activities/equipment.ts`): reports what's still missing to reach `quantity`
  * of `itemCode`, recursing into craft materials exactly the same way, but never
- * moves the character, withdraws from the bank, gathers, hunts, or crafts
+ * moves the character, withdraws from the bank, gathers, fights, or crafts
  * anything. Meant for a future decision layer to compare "how much work is this
  * upgrade" across candidates before committing to one - see the README's
  * "Automated progression decisions" section.
@@ -252,7 +252,7 @@ const craftableQuantityFor = (
 
 /**
  * Finds items the character could craft right now from whatever's sitting in
- * the bank (plus inventory), without needing to gather or hunt anything more -
+ * the bank (plus inventory), without needing to gather or fight anything more -
  * the mirror image of `materialsNeededFor` ("what can I make from what's piling
  * up" instead of "what's missing to make this"). Only considers items whose
  * crafting-skill level requirement (`item.craft.level`) the character's own
@@ -366,7 +366,7 @@ const hasOnlyEligibleKnownSources = (
   const monsterCodes = [
     ...new Set(
       missingMaterials.flatMap((material) =>
-        material.source.type === 'hunt' ? [material.source.monsterCode] : [],
+        material.source.type === 'monster' ? [material.source.monsterCode] : [],
       ),
     ),
   ];

@@ -211,12 +211,12 @@ describe('runActivity', () => {
     expect(agent.fight).not.toHaveBeenCalled();
   });
 
-  it('dispatches huntMonster to one hunting cycle with the monster code', async () => {
+  it('dispatches fightMonster to the transitional combat cycle', async () => {
     const { agent, client, getMaps } = buildDependencies();
 
     const result = await runActivity(client, agent, {
       monsterCode: 'yellow_slime',
-      type: 'huntMonster',
+      type: 'fightMonster',
     });
 
     expect(result.isOk()).toBe(true);

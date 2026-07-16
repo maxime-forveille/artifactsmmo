@@ -76,7 +76,7 @@ new orchestration Interface.
 
 ### 2. Activity execution
 
-- [x] Add a runtime dispatcher for bounded farming and hunting Activities.
+- [x] Add a runtime dispatcher for bounded farming and combat Activities.
 - [x] Reuse the existing farming and hunting cycles.
 - [x] Add targeted craft execution that does not acquire missing inputs
       recursively.
@@ -85,8 +85,8 @@ new orchestration Interface.
 - [x] Return typed Blockers for missing prerequisites.
 - [x] Run explicit equipment Goals through targeted withdraw, craft, and equip
       steps, including direct recipe materials already in the bank.
-- [x] Acquire a missing direct raw material from one unambiguous gather or hunt
-      source with an eligible crew member.
+- [x] Acquire a missing direct raw material from one unambiguous resource or
+      monster source with an eligible crew member.
 - [x] Expand equipment prerequisites through craftable material intermediates.
 - [x] Assign intermediate crafts across characters and return their outputs to
       shared storage.

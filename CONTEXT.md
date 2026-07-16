@@ -13,6 +13,8 @@ _Avoid_: Activity, task
 **Activity**:
 A bounded workflow composed of one or more actions, executed for one character
 before the orchestrator observes the crew again and chooses what comes next.
+Combat is the domain family; `fightMonster` is its target Activity name. `hunt`
+is reserved for transitional tasks and cycles that repeatedly fight and bank.
 _Avoid_: Action, strategy, forever task
 
 **Crew Snapshot**:

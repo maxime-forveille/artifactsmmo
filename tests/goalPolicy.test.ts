@@ -329,7 +329,7 @@ describe('selectCompatibleGoals', () => {
       ],
       reservations: [
         {
-          activity: { monsterCode: 'chicken', type: 'huntMonster' },
+          activity: { monsterCode: 'chicken', type: 'fightMonster' },
           characterName: 'Cartman',
           consumes: [],
           goalId: 'combat-cartman',
@@ -392,7 +392,7 @@ describe('selectCompatibleGoals', () => {
     const state = buildState({
       reservations: [
         {
-          activity: { monsterCode: 'chicken', type: 'huntMonster' },
+          activity: { monsterCode: 'chicken', type: 'fightMonster' },
           characterName: 'Stan',
           consumes: [],
           goalId: 'active-combat',

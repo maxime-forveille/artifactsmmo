@@ -71,8 +71,9 @@ seeded directly from the initial Crew Snapshot, avoiding one duplicate character
 read per crew member at startup.
 
 `runtime/activityDispatcher.ts` executes one already-selected bounded Activity
-with an existing Character Agent. It dispatches `farmResource` and `huntMonster`
-to their existing cycles, plus `craftItem`, `depositItem`, `equipItem`, and
+with an existing Character Agent. It dispatches `farmResource` and
+`fightMonster` to their existing cycles, plus `craftItem`, `depositItem`,
+`equipItem`, and
 `withdrawItem` to targeted execution; scheduling, Reservations, retry, and
 policy remain outside the dispatcher.
 
@@ -113,12 +114,12 @@ bank thresholds or autonomous priorities.
 `runtime/configuredCrewRuntime.ts` resolves every configured resource and item
 against the static catalog before constructing that adapter. For equipment it
 walks the static recipe tree, resolves every intermediate item, and accepts a
-raw material source only when the catalogs expose exactly one gather or hunt
-source. Cyclic references stop descending; absent and ambiguous sources remain
-unresolved instead of being chosen arbitrarily. The resulting Goal-to-target
-mappings feed one pure planner in global priority order. An unresolved
-configured target prevents startup rather than allowing a partial runtime
-configuration.
+raw material source only when the catalogs expose exactly one resource or
+monster source. Cyclic references stop descending; absent and ambiguous sources
+remain unresolved instead of being chosen arbitrarily. The resulting
+Goal-to-target mappings feed one pure planner in global priority order. An
+unresolved configured target prevents startup rather than allowing a partial
+runtime configuration.
 
 `runtime/taskSupervisor.ts` currently supervises long-running tasks with one
 `AbortController` per character. Its useful behavior should survive the
@@ -139,7 +140,7 @@ than assuming every assignment runs forever.
 ```ts
 type Activity =
   | { type: 'farmResource'; resourceCode: string }
-  | { type: 'huntMonster'; monsterCode: string }
+  | { type: 'fightMonster'; monsterCode: string }
   | { type: 'craftItem'; itemCode: string; quantity: number }
   | { type: 'depositItem'; itemCode: string; quantity: number }
   | { type: 'equipItem'; itemCode: string }
@@ -149,7 +150,7 @@ type Activity =
 Activities are operationally bounded workflows, not permanent instructions:
 
 - `farmResource`: currently moves, gathers until full, then banks;
-- `huntMonster`: currently moves, fights/rests until full, then banks;
+- `fightMonster`: currently moves, fights/rests until full, then banks;
 - `craftItem`: validates held inputs, moves to the workshop, and crafts;
 - `depositItem`: validates held stock, moves to the bank, and deposits only the
   requested item quantity;
@@ -253,7 +254,7 @@ resource until an explicit bank threshold is reached.
 priority order and serializable Activity assignments. Each assignment
 identifies its Goal, character, Activity, and intended item production or
 consumption. Intents include exact quantities when an Activity can know them;
-bounded gathering and hunting outputs remain unquantified. An assignment
+bounded gathering and combat outputs remain unquantified.
 becomes a Reservation only after the runtime starts that Activity successfully;
 runtime promises and cancellation handles remain outside orchestration state.
 
@@ -263,10 +264,11 @@ proposes one `farmResource` Activity for the strongest eligible gatherer.
 
 `orchestration/equipmentProgression.ts` advances an explicit character equipment
 Goal through one recursive recipe step at a time. It retrieves banked inputs,
-assigns an eligible gatherer or safe hunter for a uniquely sourced raw material,
-crafts intermediates in dependency order, crafts the target, equips it, and then
-completes the Goal. The target character crafts when eligible; otherwise the
-highest-skilled idle crafter performs the step and deposits its output into
+assigns an eligible gatherer or safe fighter for a uniquely sourced raw
+material, crafts intermediates in dependency order, crafts the target, equips
+it, and then completes the Goal. The target character crafts when eligible;
+otherwise the highest-skilled idle crafter performs the step and deposits its
+output into
 shared storage for the next consumer. The planner subtracts quantities reserved
 by in-flight withdrawals from observed bank stock. Replenishment waits for
 active withdrawals to settle, while withdrawals proposed in the current pure
