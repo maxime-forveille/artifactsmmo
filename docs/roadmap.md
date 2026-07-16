@@ -80,7 +80,7 @@ new orchestration Interface.
 - [x] Acquire a missing direct raw material from one unambiguous gather or hunt
       source with an eligible crew member.
 - [x] Expand equipment prerequisites through craftable material intermediates.
-- [ ] Assign intermediate crafts across characters and return their outputs to
+- [x] Assign intermediate crafts across characters and return their outputs to
       shared storage.
 
 ### 3. Rolling scheduler

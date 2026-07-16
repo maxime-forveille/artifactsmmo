@@ -202,6 +202,67 @@ describe('planEquipmentProgression', () => {
     });
   });
 
+  it('assigns the target craft to another eligible character', () => {
+    const state = buildState();
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({ weaponcrafting_level: 0 }),
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 2, slot: 1 }],
+          name: 'Kyle',
+          weaponcrafting_level: 8,
+        }),
+      ],
+    });
+
+    const result = planEquipmentProgression(snapshot, state, buildItem());
+
+    expect(result._unsafeUnwrap().activities[0]).toMatchObject({
+      activity: { itemCode: 'copper_dagger', quantity: 1, type: 'craftItem' },
+      characterName: 'Kyle',
+    });
+  });
+
+  it('assigns a target craft to the eligible character with the highest skill', () => {
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({ weaponcrafting_level: 0 }),
+        buildCharacter({ name: 'Kyle', weaponcrafting_level: 6 }),
+        buildCharacter({ name: 'Cartman', weaponcrafting_level: 8 }),
+      ],
+    });
+    const item = buildItem({
+      craft: { items: [], level: 5, quantity: 1, skill: 'weaponcrafting' },
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item);
+
+    expect(result._unsafeUnwrap().activities[0]).toMatchObject({
+      activity: { itemCode: 'copper_dagger', quantity: 1, type: 'craftItem' },
+      characterName: 'Cartman',
+    });
+  });
+
+  it('breaks equal crafter skill ties by character name', () => {
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({ weaponcrafting_level: 0 }),
+        buildCharacter({ name: 'Kyle', weaponcrafting_level: 8 }),
+        buildCharacter({ name: 'Cartman', weaponcrafting_level: 8 }),
+      ],
+    });
+    const item = buildItem({
+      craft: { items: [], level: 5, quantity: 1, skill: 'weaponcrafting' },
+    });
+
+    const result = planEquipmentProgression(snapshot, buildState(), item);
+
+    expect(result._unsafeUnwrap().activities[0]).toMatchObject({
+      activity: { itemCode: 'copper_dagger', quantity: 1, type: 'craftItem' },
+      characterName: 'Cartman',
+    });
+  });
+
   it('withdraws a banked target instead of crafting a duplicate', () => {
     const state = buildState();
     const result = planEquipmentProgression(
@@ -423,6 +484,239 @@ describe('planEquipmentProgression', () => {
       quantity: 2,
       type: 'craftItem',
     });
+  });
+
+  it('assigns an intermediate craft to another eligible character', () => {
+    const copperBar = buildItem({
+      code: 'copper_bar',
+      craft: {
+        items: [{ code: 'copper_ore', quantity: 3 }],
+        level: 5,
+        quantity: 1,
+        skill: 'mining',
+      },
+    });
+    const copperOre = buildRawItem('copper_ore');
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({ mining_level: 0 }),
+        buildCharacter({
+          inventory: [{ code: 'copper_ore', quantity: 6, slot: 1 }],
+          mining_level: 8,
+          name: 'Kyle',
+        }),
+      ],
+    });
+
+    const result = planEquipmentProgression(
+      snapshot,
+      buildState(),
+      buildItem(),
+      undefined,
+      [],
+      [copperBar, copperOre],
+    );
+
+    expect(result._unsafeUnwrap().activities).toEqual([
+      {
+        activity: { itemCode: 'copper_bar', quantity: 2, type: 'craftItem' },
+        characterName: 'Kyle',
+        consumes: [],
+        goalId: 'equip-stan-dagger',
+        produces: [{ itemCode: 'copper_bar' }],
+      },
+    ]);
+  });
+
+  it('deposits an intermediate held by another character for shared use', () => {
+    const copperBar = buildItem({ code: 'copper_bar' });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter(),
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 2, slot: 1 }],
+          name: 'Kyle',
+        }),
+      ],
+    });
+
+    const result = planEquipmentProgression(
+      snapshot,
+      buildState(),
+      buildItem(),
+      undefined,
+      [],
+      [copperBar],
+    );
+
+    expect(result._unsafeUnwrap().activities).toEqual([
+      {
+        activity: { itemCode: 'copper_bar', quantity: 2, type: 'depositItem' },
+        characterName: 'Kyle',
+        consumes: [],
+        goalId: 'equip-stan-dagger',
+        produces: [{ itemCode: 'copper_bar' }],
+      },
+    ]);
+  });
+
+  it('deposits only the intermediate quantity still missing', () => {
+    const target = buildItem({
+      craft: {
+        items: [{ code: 'copper_bar', quantity: 3 }],
+        level: 5,
+        quantity: 1,
+        skill: 'weaponcrafting',
+      },
+    });
+    const copperBar = buildItem({ code: 'copper_bar' });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 1, slot: 1 }],
+        }),
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 5, slot: 1 }],
+          name: 'Kyle',
+        }),
+      ],
+    });
+
+    const result = planEquipmentProgression(
+      snapshot,
+      buildState(),
+      target,
+      undefined,
+      [],
+      [copperBar],
+    );
+
+    expect(result._unsafeUnwrap().activities[0]).toMatchObject({
+      activity: { itemCode: 'copper_bar', quantity: 2, type: 'depositItem' },
+      characterName: 'Kyle',
+    });
+  });
+
+  it('deposits an intermediate from the character holding the most', () => {
+    const copperBar = buildItem({ code: 'copper_bar' });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter(),
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 1, slot: 1 }],
+          name: 'Kyle',
+        }),
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 3, slot: 1 }],
+          name: 'Cartman',
+        }),
+      ],
+    });
+
+    const result = planEquipmentProgression(
+      snapshot,
+      buildState(),
+      buildItem(),
+      undefined,
+      [],
+      [copperBar],
+    );
+
+    expect(result._unsafeUnwrap().activities[0]).toMatchObject({
+      activity: { itemCode: 'copper_bar', quantity: 2, type: 'depositItem' },
+      characterName: 'Cartman',
+    });
+  });
+
+  it('breaks equal intermediate holder ties by character name', () => {
+    const copperBar = buildItem({ code: 'copper_bar' });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter(),
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 2, slot: 1 }],
+          name: 'Kyle',
+        }),
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 2, slot: 1 }],
+          name: 'Cartman',
+        }),
+      ],
+    });
+
+    const result = planEquipmentProgression(
+      snapshot,
+      buildState(),
+      buildItem(),
+      undefined,
+      [],
+      [copperBar],
+    );
+
+    expect(result._unsafeUnwrap().activities[0]).toMatchObject({
+      activity: { itemCode: 'copper_bar', quantity: 2, type: 'depositItem' },
+      characterName: 'Cartman',
+    });
+  });
+
+  it('waits when the only intermediate holder is busy', () => {
+    const copperBar = buildItem({ code: 'copper_bar' });
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter(),
+        buildCharacter({
+          inventory: [{ code: 'copper_bar', quantity: 2, slot: 1 }],
+          name: 'Kyle',
+        }),
+      ],
+    });
+    const state = buildState({
+      reservations: [buildReservation({ characterName: 'Kyle' })],
+    });
+
+    const result = planEquipmentProgression(
+      snapshot,
+      state,
+      buildItem(),
+      undefined,
+      [],
+      [copperBar],
+    );
+
+    expect(result._unsafeUnwrap()).toEqual({ activities: [], state });
+  });
+
+  it('waits when the only eligible intermediate crafter is busy', () => {
+    const copperBar = buildItem({
+      code: 'copper_bar',
+      craft: {
+        items: [{ code: 'copper_ore', quantity: 3 }],
+        level: 5,
+        quantity: 1,
+        skill: 'mining',
+      },
+    });
+    const copperOre = buildRawItem('copper_ore');
+    const snapshot = buildSnapshot({
+      characters: [
+        buildCharacter({ mining_level: 0 }),
+        buildCharacter({ mining_level: 8, name: 'Kyle' }),
+      ],
+    });
+    const state = buildState({
+      reservations: [buildReservation({ characterName: 'Kyle' })],
+    });
+
+    const result = planEquipmentProgression(
+      snapshot,
+      state,
+      buildItem(),
+      undefined,
+      [],
+      [copperBar, copperOre],
+    );
+
+    expect(result._unsafeUnwrap()).toEqual({ activities: [], state });
   });
 
   it('accounts for held output and recipe yield when crafting an intermediate', () => {

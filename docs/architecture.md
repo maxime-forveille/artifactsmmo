@@ -59,9 +59,9 @@ read per crew member at startup.
 
 `runtime/activityDispatcher.ts` executes one already-selected bounded Activity
 with an existing Character Agent. It dispatches `farmResource` and `huntMonster`
-to their existing cycles, plus `craftItem`, `equipItem`, and `withdrawItem` to
-targeted execution; scheduling, Reservations, retry, and policy remain outside
-the dispatcher.
+to their existing cycles, plus `craftItem`, `depositItem`, `equipItem`, and
+`withdrawItem` to targeted execution; scheduling, Reservations, retry, and
+policy remain outside the dispatcher.
 
 `runtime/activityLauncher.ts` atomically reserves an idle character and starts
 one dispatched Activity. It retries failures classified as transient without
@@ -128,6 +128,7 @@ type Activity =
   | { type: 'farmResource'; resourceCode: string }
   | { type: 'huntMonster'; monsterCode: string }
   | { type: 'craftItem'; itemCode: string; quantity: number }
+  | { type: 'depositItem'; itemCode: string; quantity: number }
   | { type: 'equipItem'; itemCode: string }
   | { type: 'withdrawItem'; itemCode: string; quantity: number };
 ```
@@ -137,11 +138,14 @@ Activities are complete operational cycles, not individual game Actions:
 - `farmResource`: move, gather until full, then bank;
 - `huntMonster`: move, fight/rest until full, then bank;
 - `craftItem`: validate held inputs, move to the workshop, and craft;
+- `depositItem`: validate held stock, move to the bank, and deposit only the
+  requested item quantity;
 - `equipItem`: replace the current slot occupant with one held target;
 - `withdrawItem`: validate bank stock and inventory room, then retrieve an item.
 
 Movement, gathering, fighting, resting, withdrawing, and depositing remain
-internal Actions. They are not scheduler-visible Activities.
+individual Actions. Targeted banking Activities wrap those Actions in bounded,
+scheduler-visible operational cycles.
 
 Farming and hunting expose bounded cycles. Targeted crafting and equipping
 return typed Blockers for missing inputs, insufficient levels, invalid recipes,
@@ -182,8 +186,10 @@ proposes one `farmResource` Activity for the strongest eligible gatherer.
 Goal through one recursive recipe step at a time. It retrieves banked inputs,
 assigns an eligible gatherer or safe hunter for a uniquely sourced raw material,
 crafts intermediates in dependency order, crafts the target, equips it, and then
-completes the Goal. The target character currently performs every craft in the
-chain; profession-level Blockers remain for a later planner layer to turn into
+completes the Goal. The target character crafts when eligible; otherwise the
+highest-skilled idle crafter performs the step and deposits its output into
+shared storage for the next consumer. Busy holders and crafters cause the Goal
+to wait. Profession-level Blockers remain for a later planner layer to turn into
 profession progression work.
 
 `orchestration/configuredGoalPlanner.ts` applies both transitions in global

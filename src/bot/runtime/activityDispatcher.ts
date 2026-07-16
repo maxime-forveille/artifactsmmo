@@ -3,13 +3,16 @@ import type { ResultAsync } from 'neverthrow';
 import type { ArtifactsClient } from '../../client/index.js';
 import type {
   CraftItemActivity,
+  DepositItemActivity,
   EquipItemActivity,
   FarmResourceActivity,
   HuntMonsterActivity,
   WithdrawItemActivity,
 } from '../activities/activity.js';
 import {
+  runDepositItemActivity,
   runWithdrawItemActivity,
+  type DepositItemError,
   type WithdrawItemError,
 } from '../activities/banking.js';
 import {
@@ -29,12 +32,14 @@ import type { CharacterAgent } from './characterAgent.js';
 
 export type ExecutableActivity =
   | CraftItemActivity
+  | DepositItemActivity
   | EquipItemActivity
   | FarmResourceActivity
   | HuntMonsterActivity
   | WithdrawItemActivity;
 export type ActivityExecutionError =
   | CraftItemExecutionError
+  | DepositItemError
   | EquipItemExecutionError
   | FarmingError
   | HuntingError
@@ -71,6 +76,9 @@ export const runActivity = (
   switch (activity.type) {
     case 'craftItem': {
       return runCraftItemActivity(client, agent, activity);
+    }
+    case 'depositItem': {
+      return runDepositItemActivity(client, agent, activity);
     }
     case 'equipItem': {
       return runEquipItemActivity(client, agent, activity);

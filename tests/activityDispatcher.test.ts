@@ -125,6 +125,33 @@ describe('runActivity', () => {
     expect(agent.fight).not.toHaveBeenCalled();
   });
 
+  it('dispatches depositItem to one targeted bank deposit', async () => {
+    const character = {
+      ...buildCharacter(),
+      inventory: [
+        { code: 'copper_ore', quantity: 3, slot: 1 },
+        { code: 'ash_wood', quantity: 2, slot: 2 },
+      ],
+    };
+    const { agent, client, getMaps } = buildDependencies(character);
+
+    const result = await runActivity(client, agent, {
+      itemCode: 'copper_ore',
+      quantity: 2,
+      type: 'depositItem',
+    });
+
+    expect(result.isOk()).toBe(true);
+    expect(getMaps).toHaveBeenCalledWith({
+      content_code: 'bank',
+      content_type: 'bank',
+    });
+    expect(agent.depositItems).toHaveBeenCalledWith([
+      { code: 'copper_ore', quantity: 2 },
+    ]);
+    expect(agent.withdrawItems).not.toHaveBeenCalled();
+  });
+
   it('dispatches equipItem to one targeted equip', async () => {
     const { agent, client, getItem } = buildDependencies();
 

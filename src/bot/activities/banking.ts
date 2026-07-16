@@ -3,7 +3,7 @@ import { errAsync, okAsync, type ResultAsync } from 'neverthrow';
 import type { ArtifactsApiError, ArtifactsClient } from '../../client/index.js';
 import type { components } from '../../client/schema.js';
 import { logger } from '../../utils/logger.js';
-import { heldItems, totalItemCount } from '../inventory.js';
+import { heldItems, heldQuantity, totalItemCount } from '../inventory.js';
 import type { CharacterAgent } from '../runtime/characterAgent.js';
 import {
   BANK_CONTENT_CODE,
@@ -11,7 +11,7 @@ import {
   resolveLocation,
 } from '../world.js';
 
-import type { WithdrawItemActivity } from './activity.js';
+import type { DepositItemActivity, WithdrawItemActivity } from './activity.js';
 
 type SimpleItem = components['schemas']['SimpleItemSchema'];
 
@@ -25,6 +25,26 @@ export class BankItemUnavailableError extends Error {
       `Bank holds ${availableQuantity}x ${itemCode}, but ${requestedQuantity}x were requested`,
     );
     this.name = 'BankItemUnavailableError';
+  }
+}
+
+export class HeldItemUnavailableError extends Error {
+  constructor(
+    public readonly itemCode: string,
+    public readonly requestedQuantity: number,
+    public readonly availableQuantity: number,
+  ) {
+    super(
+      `Character holds ${availableQuantity}x ${itemCode}, but depositing ${requestedQuantity}x was requested`,
+    );
+    this.name = 'HeldItemUnavailableError';
+  }
+}
+
+export class InvalidDepositQuantityError extends Error {
+  constructor(public readonly quantity: number) {
+    super(`Deposit quantity must be a positive integer, received ${quantity}`);
+    this.name = 'InvalidDepositQuantityError';
   }
 }
 
@@ -49,6 +69,11 @@ export class WithdrawInventoryFullError extends Error {
 }
 
 export type BankingError = ArtifactsApiError | LocationNotFoundError;
+export type DepositItemError =
+  | ArtifactsApiError
+  | HeldItemUnavailableError
+  | InvalidDepositQuantityError
+  | LocationNotFoundError;
 export type WithdrawItemError =
   | ArtifactsApiError
   | BankItemUnavailableError
@@ -58,6 +83,11 @@ export type WithdrawItemError =
 
 type BankingClient = Pick<ArtifactsClient, 'getMaps'>;
 type BankingAgent = Pick<
+  CharacterAgent,
+  'depositItems' | 'getCharacter' | 'moveTo'
+>;
+type DepositClient = Pick<ArtifactsClient, 'getMaps'>;
+type DepositAgent = Pick<
   CharacterAgent,
   'depositItems' | 'getCharacter' | 'moveTo'
 >;
@@ -89,6 +119,41 @@ const bankQuantity = (page: readonly SimpleItem[], itemCode: string): number =>
   page
     .filter((item) => item.code === itemCode)
     .reduce((total, item) => total + item.quantity, 0);
+
+/** Deposits one explicit held item quantity without touching other inventory. */
+export const runDepositItemActivity = (
+  client: DepositClient,
+  agent: DepositAgent,
+  activity: DepositItemActivity,
+): ResultAsync<void, DepositItemError> => {
+  if (!Number.isInteger(activity.quantity) || activity.quantity <= 0) {
+    return errAsync(new InvalidDepositQuantityError(activity.quantity));
+  }
+
+  const availableQuantity = heldQuantity(
+    agent.getCharacter(),
+    activity.itemCode,
+  );
+
+  if (availableQuantity < activity.quantity) {
+    return errAsync(
+      new HeldItemUnavailableError(
+        activity.itemCode,
+        activity.quantity,
+        availableQuantity,
+      ),
+    );
+  }
+
+  return resolveLocation(client, 'bank', BANK_CONTENT_CODE)
+    .andThen((bankMap) => agent.moveTo(bankMap.map_id))
+    .andThen(() =>
+      agent.depositItems([
+        { code: activity.itemCode, quantity: activity.quantity },
+      ]),
+    )
+    .map(() => undefined);
+};
 
 /**
  * Withdraws one explicit item quantity already observed by policy. It never

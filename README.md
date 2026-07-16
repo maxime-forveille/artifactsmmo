@@ -106,9 +106,10 @@ requires `id`, `itemCode`, `minimumBankQuantity`, and `resourceCode`. An
 
 The equipment Goal resolves its recipe tree, retrieves banked inputs, crafts
 intermediates, then crafts and equips the target. When a missing raw material
-has exactly one gather or hunt source, an eligible crew member acquires it
-first. The target character currently performs every craft in that chain;
-ambiguous sources and insufficient profession levels remain blocked.
+has exactly one gather or hunt source, an eligible crew member acquires it.
+Eligible characters can craft intermediate or target items for one another;
+their output returns to the bank before the consumer continues. Ambiguous
+sources and insufficient crew profession levels remain blocked.
 
 When `orchestration.json` is absent, `tasks.json` remains the transitional human
 Adapter. It is validated with Valibot and reloaded every 10 seconds without

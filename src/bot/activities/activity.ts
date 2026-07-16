@@ -4,6 +4,12 @@ export type CraftItemActivity = Readonly<{
   type: 'craftItem';
 }>;
 
+export type DepositItemActivity = Readonly<{
+  itemCode: string;
+  quantity: number;
+  type: 'depositItem';
+}>;
+
 export type EquipItemActivity = Readonly<{
   itemCode: string;
   type: 'equipItem';
@@ -27,6 +33,7 @@ export type WithdrawItemActivity = Readonly<{
 
 export type Activity =
   | CraftItemActivity
+  | DepositItemActivity
   | EquipItemActivity
   | FarmResourceActivity
   | HuntMonsterActivity

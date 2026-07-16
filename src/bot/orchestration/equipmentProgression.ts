@@ -3,6 +3,7 @@ import { err, ok, type Result } from 'neverthrow';
 import type { components } from '../../client/schema.js';
 import type {
   CraftItemActivity,
+  DepositItemActivity,
   EquipItemActivity,
   FarmResourceActivity,
   HuntMonsterActivity,
@@ -24,11 +25,13 @@ import {
 } from './resourceReplenishment.js';
 
 type Character = Readonly<components['schemas']['CharacterSchema']>;
+type CraftSkill = components['schemas']['CraftSkill'];
 type Item = Readonly<components['schemas']['ItemSchema']>;
 type Monster = Readonly<components['schemas']['MonsterSchema']>;
 type Resource = Readonly<components['schemas']['ResourceSchema']>;
 type EquipmentActivity =
   | CraftItemActivity
+  | DepositItemActivity
   | EquipItemActivity
   | FarmResourceActivity
   | HuntMonsterActivity
@@ -229,6 +232,17 @@ const acquisitionStepFor = (
   );
 };
 
+const depositStep = (
+  characterName: string,
+  itemCode: string,
+  quantity: number,
+): EquipmentStep => ({
+  activity: { itemCode, quantity, type: 'depositItem' },
+  characterName,
+  consumes: [],
+  produces: [{ itemCode }],
+});
+
 const withdrawStep = (
   characterName: string,
   itemCode: string,
@@ -251,6 +265,70 @@ const craftStep = (
   produces: [{ itemCode }],
 });
 
+const findBestItemHolder = (
+  snapshot: CrewSnapshot,
+  itemCode: string,
+  consumerName: string,
+  excludedCharacterNames: ReadonlySet<string> = new Set(),
+): Character | undefined =>
+  snapshot.characters
+    .filter(
+      (character) =>
+        character.name !== consumerName &&
+        !excludedCharacterNames.has(character.name) &&
+        heldQuantity(character, itemCode) > 0,
+    )
+    .reduce<Character | undefined>((best, character) => {
+      if (best === undefined) {
+        return character;
+      }
+
+      const heldDifference =
+        heldQuantity(character, itemCode) - heldQuantity(best, itemCode);
+
+      if (heldDifference !== 0) {
+        return heldDifference > 0 ? character : best;
+      }
+
+      return character.name.localeCompare(best.name) < 0 ? character : best;
+    }, undefined);
+
+const findBestCrafter = (
+  snapshot: CrewSnapshot,
+  skill: CraftSkill,
+  requiredLevel: number,
+  preferredCharacterName: string,
+  excludedCharacterNames: ReadonlySet<string> = new Set(),
+): Character | undefined => {
+  const eligible = snapshot.characters.filter(
+    (character) =>
+      !excludedCharacterNames.has(character.name) &&
+      craftSkillLevel(character, skill) >= requiredLevel,
+  );
+  const preferred = eligible.find(
+    (character) => character.name === preferredCharacterName,
+  );
+
+  if (preferred !== undefined) {
+    return preferred;
+  }
+
+  return eligible.reduce<Character | undefined>((best, character) => {
+    if (best === undefined) {
+      return character;
+    }
+
+    const levelDifference =
+      craftSkillLevel(character, skill) - craftSkillLevel(best, skill);
+
+    if (levelDifference !== 0) {
+      return levelDifference > 0 ? character : best;
+    }
+
+    return character.name.localeCompare(best.name) < 0 ? character : best;
+  }, undefined);
+};
+
 const planHeldItem = (
   snapshot: CrewSnapshot,
   state: OrchestratorState,
@@ -267,6 +345,28 @@ const planHeldItem = (
 
   const missingQuantity = requiredQuantity - heldQuantity(character, item.code);
   const craftingSkill = item.craft?.skill;
+  const reservedNames = reservedCharacterNames(state);
+  const availableHolder = findBestItemHolder(
+    snapshot,
+    item.code,
+    character.name,
+    reservedNames,
+  );
+
+  if (availableHolder !== undefined) {
+    return ok({
+      status: 'step',
+      step: depositStep(
+        availableHolder.name,
+        item.code,
+        Math.min(missingQuantity, heldQuantity(availableHolder, item.code)),
+      ),
+    });
+  }
+
+  if (findBestItemHolder(snapshot, item.code, character.name) !== undefined) {
+    return ok({ status: 'waiting' });
+  }
 
   if (craftingSkill === undefined) {
     const resolvedSource = sourcesByItemCode.get(item.code);
@@ -285,12 +385,30 @@ const planHeldItem = (
     missingQuantity / (item.craft?.quantity ?? 1),
   );
   const requiredCraftingLevel = item.craft?.level ?? 0;
+  const eligibleCrafter = findBestCrafter(
+    snapshot,
+    craftingSkill,
+    requiredCraftingLevel,
+    character.name,
+  );
 
-  if (craftSkillLevel(character, craftingSkill) < requiredCraftingLevel) {
+  if (eligibleCrafter === undefined) {
     return ok({
       status: 'step',
       step: craftStep(character.name, item.code, craftQuantity),
     });
+  }
+
+  const crafter = findBestCrafter(
+    snapshot,
+    craftingSkill,
+    requiredCraftingLevel,
+    character.name,
+    reservedNames,
+  );
+
+  if (crafter === undefined) {
+    return ok({ status: 'waiting' });
   }
 
   const nextAncestors = new Set([...ancestors, item.code]);
@@ -298,7 +416,7 @@ const planHeldItem = (
   for (const material of item.craft?.items ?? []) {
     const requiredMaterialQuantity = material.quantity * craftQuantity;
     const missingMaterialQuantity = Math.max(
-      requiredMaterialQuantity - heldQuantity(character, material.code),
+      requiredMaterialQuantity - heldQuantity(crafter, material.code),
       0,
     );
 
@@ -314,11 +432,7 @@ const planHeldItem = (
     if (bankedMaterialQuantity > 0) {
       return ok({
         status: 'step',
-        step: withdrawStep(
-          character.name,
-          material.code,
-          bankedMaterialQuantity,
-        ),
+        step: withdrawStep(crafter.name, material.code, bankedMaterialQuantity),
       });
     }
 
@@ -340,7 +454,7 @@ const planHeldItem = (
     const materialProgress = planHeldItem(
       snapshot,
       state,
-      character,
+      crafter,
       materialItem,
       requiredMaterialQuantity,
       itemsByCode,
@@ -357,7 +471,7 @@ const planHeldItem = (
 
   return ok({
     status: 'step',
-    step: craftStep(character.name, item.code, craftQuantity),
+    step: craftStep(crafter.name, item.code, craftQuantity),
   });
 };
 

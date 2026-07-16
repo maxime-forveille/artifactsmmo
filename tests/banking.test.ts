@@ -8,7 +8,10 @@ vi.mock('../src/utils/logger.js', () => ({ logger: { info: loggerInfoMock } }));
 import {
   BankItemUnavailableError,
   goToBankAndDepositEverything,
+  HeldItemUnavailableError,
+  InvalidDepositQuantityError,
   InvalidWithdrawQuantityError,
+  runDepositItemActivity,
   runWithdrawItemActivity,
   WithdrawInventoryFullError,
 } from '../src/bot/activities/banking.js';
@@ -48,6 +51,31 @@ const buildCooldown = (): Cooldown => ({
   started_at: '2026-07-16T00:00:00.000Z',
   total_seconds: 5,
 });
+
+const buildDepositDependencies = (
+  character = buildCharacter(),
+  mapPage = buildMapPage(),
+  depositError?: ArtifactsApiError,
+) => {
+  const getMaps = vi.fn(() => okAsync(mapPage));
+  const getCharacter = vi.fn(() => character);
+  const moveTo = vi.fn(() => okAsync(undefined));
+  const depositItems = vi.fn(
+    (): ResultAsync<BankItemTransaction, ArtifactsApiError> =>
+      depositError === undefined
+        ? okAsync({ bank: [], character, cooldown: buildCooldown(), items: [] })
+        : errAsync(depositError),
+  );
+
+  return {
+    agent: { depositItems, getCharacter, moveTo },
+    client: { getMaps },
+    depositItems,
+    getCharacter,
+    getMaps,
+    moveTo,
+  };
+};
 
 const buildDependencies = (
   character = buildCharacter(),
@@ -128,6 +156,153 @@ describe('goToBankAndDepositEverything', () => {
       { character: 'Stan', items },
       'Stan: depositing 2 item type(s) at the bank',
     );
+  });
+});
+
+describe('runDepositItemActivity', () => {
+  it('moves to the bank and deposits only the requested item quantity', async () => {
+    const character = buildCharacter({
+      inventory: [
+        { code: 'copper_ore', quantity: 3, slot: 1 },
+        { code: 'ash_wood', quantity: 7, slot: 2 },
+      ],
+    });
+    const { agent, client, depositItems, getMaps, moveTo } =
+      buildDepositDependencies(character);
+
+    const result = await runDepositItemActivity(client, agent, {
+      itemCode: 'copper_ore',
+      quantity: 2,
+      type: 'depositItem',
+    });
+
+    expect(result.isOk()).toBe(true);
+    expect(getMaps).toHaveBeenCalledWith({
+      content_code: 'bank',
+      content_type: 'bank',
+    });
+    expect(moveTo).toHaveBeenCalledWith(BANK_MAP_ID);
+    expect(depositItems).toHaveBeenCalledWith([
+      { code: 'copper_ore', quantity: 2 },
+    ]);
+  });
+
+  it('allows depositing the exact held quantity', async () => {
+    const character = buildCharacter({
+      inventory: [{ code: 'copper_ore', quantity: 2, slot: 1 }],
+    });
+    const { agent, client, depositItems } = buildDepositDependencies(character);
+
+    const result = await runDepositItemActivity(client, agent, {
+      itemCode: 'copper_ore',
+      quantity: 2,
+      type: 'depositItem',
+    });
+
+    expect(result.isOk()).toBe(true);
+    expect(depositItems).toHaveBeenCalledWith([
+      { code: 'copper_ore', quantity: 2 },
+    ]);
+  });
+
+  it.each([0, -1, 1.5])(
+    'rejects invalid quantity %s before inspecting inventory',
+    async (quantity) => {
+      const { agent, client, depositItems, getCharacter, getMaps } =
+        buildDepositDependencies();
+
+      const result = await runDepositItemActivity(client, agent, {
+        itemCode: 'copper_ore',
+        quantity,
+        type: 'depositItem',
+      });
+
+      expect(result._unsafeUnwrapErr()).toBeInstanceOf(
+        InvalidDepositQuantityError,
+      );
+      expect(result._unsafeUnwrapErr()).toMatchObject({
+        message: `Deposit quantity must be a positive integer, received ${quantity}`,
+        name: 'InvalidDepositQuantityError',
+        quantity,
+      });
+      expect(getCharacter).not.toHaveBeenCalled();
+      expect(getMaps).not.toHaveBeenCalled();
+      expect(depositItems).not.toHaveBeenCalled();
+    },
+  );
+
+  it('returns a typed Blocker when the held quantity is insufficient', async () => {
+    const character = buildCharacter({
+      inventory: [
+        { code: 'copper_ore', quantity: 1, slot: 1 },
+        { code: 'ash_wood', quantity: 100, slot: 2 },
+      ],
+    });
+    const { agent, client, depositItems, getMaps, moveTo } =
+      buildDepositDependencies(character);
+
+    const result = await runDepositItemActivity(client, agent, {
+      itemCode: 'copper_ore',
+      quantity: 2,
+      type: 'depositItem',
+    });
+
+    expect(result._unsafeUnwrapErr()).toBeInstanceOf(HeldItemUnavailableError);
+    expect(result._unsafeUnwrapErr()).toMatchObject({
+      availableQuantity: 1,
+      itemCode: 'copper_ore',
+      message: 'Character holds 1x copper_ore, but depositing 2x was requested',
+      name: 'HeldItemUnavailableError',
+      requestedQuantity: 2,
+    });
+    expect(getMaps).not.toHaveBeenCalled();
+    expect(moveTo).not.toHaveBeenCalled();
+    expect(depositItems).not.toHaveBeenCalled();
+  });
+
+  it('returns a location Blocker when no bank map exists', async () => {
+    const character = buildCharacter({
+      inventory: [{ code: 'copper_ore', quantity: 2, slot: 1 }],
+    });
+    const { agent, client, depositItems, moveTo } = buildDepositDependencies(
+      character,
+      buildMapPage([]),
+    );
+
+    const result = await runDepositItemActivity(client, agent, {
+      itemCode: 'copper_ore',
+      quantity: 2,
+      type: 'depositItem',
+    });
+
+    expect(result._unsafeUnwrapErr()).toEqual(
+      new LocationNotFoundError('bank', 'bank'),
+    );
+    expect(moveTo).not.toHaveBeenCalled();
+    expect(depositItems).not.toHaveBeenCalled();
+  });
+
+  it('propagates a deposit Action failure', async () => {
+    const character = buildCharacter({
+      inventory: [{ code: 'copper_ore', quantity: 2, slot: 1 }],
+    });
+    const apiError = new ArtifactsApiError('conflict', 478, {});
+    const { agent, client, depositItems } = buildDepositDependencies(
+      character,
+      buildMapPage(),
+      apiError,
+    );
+
+    const result = await runDepositItemActivity(client, agent, {
+      itemCode: 'copper_ore',
+      quantity: 2,
+      type: 'depositItem',
+    });
+
+    expect(result._unsafeUnwrapErr()).toBe(apiError);
+    expect(depositItems).toHaveBeenCalledWith([
+      { code: 'copper_ore', quantity: 2 },
+    ]);
   });
 });
 
