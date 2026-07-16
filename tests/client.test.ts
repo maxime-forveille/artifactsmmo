@@ -97,154 +97,65 @@ describe('createArtifactsClient', () => {
     expect(result.isErr()).toBe(true);
     const error = result._unsafeUnwrapErr();
     expect(error).toBeInstanceOf(ArtifactsApiError);
+    expect(error.message).toBe('Artifacts API request failed: 498 ');
     expect(error.status).toBe(498);
     expect(error.body).toEqual({
       error: { code: 498, message: 'Character not found.' },
     });
   });
 
-  it('sends the destination as the request body when moving a character', async () => {
-    let receivedBody: unknown;
+  it('maps a transport failure to an ArtifactsApiError', async () => {
+    server.use(
+      http.get('https://api.artifactsmmo.com/characters/:name', () =>
+        HttpResponse.error(),
+      ),
+    );
+
+    const result =
+      await createArtifactsClient('test-token').getCharacter('Cartman');
+
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error).toBeInstanceOf(ArtifactsApiError);
+    expect(error.message).toBe('Artifacts API request failed to send');
+    expect(error.status).toBe(0);
+    expect(error.body).toBeInstanceOf(TypeError);
+  });
+
+  it('caches identical log reads while keeping distinct queries separate', async () => {
+    const receivedRequests: { name: string; query: Record<string, string> }[] =
+      [];
 
     server.use(
-      http.post(
-        'https://api.artifactsmmo.com/my/:name/action/move',
-        async ({ request }) => {
-          receivedBody = await request.json();
-
+      http.get(
+        'https://api.artifactsmmo.com/my/logs/:name',
+        ({ params, request }) => {
+          receivedRequests.push({
+            name: String(params['name']),
+            query: Object.fromEntries(new URL(request.url).searchParams),
+          });
           return HttpResponse.json({
-            data: {
-              character: {},
-              cooldown: {
-                expiration: '2024-01-01T00:00:05.000Z',
-                reason: 'movement',
-                remaining_seconds: 5,
-                started_at: '2024-01-01T00:00:00.000Z',
-                total_seconds: 5,
-              },
-              destination: {},
-              path: [],
-            },
+            data: [],
+            page: 1,
+            pages: 1,
+            size: 100,
+            total: 0,
           });
         },
       ),
     );
 
     const client = createArtifactsClient('test-token');
-    const result = await client.moveCharacter('Cartman', { x: 1, y: 2 });
 
-    expect(receivedBody).toEqual({ x: 1, y: 2 });
-    expect(result.isOk()).toBe(true);
-  });
+    await client.getCharacterLogs('Cartman', { size: 100 });
+    await client.getCharacterLogs('Cartman', { size: 100 });
+    await client.getCharacterLogs('Stan', { size: 50 });
+    await client.getCharacterLogs('Kenny');
 
-  it('fetches an item by code', async () => {
-    server.use(
-      http.get('https://api.artifactsmmo.com/items/:code', ({ params }) =>
-        HttpResponse.json({
-          data: {
-            code: params['code'],
-            craft: {
-              items: [{ code: 'copper_ore', quantity: 6 }],
-              level: 1,
-              quantity: 1,
-              skill: 'weaponcrafting',
-            },
-          },
-        }),
-      ),
-    );
-
-    const client = createArtifactsClient('test-token');
-    const result = await client.getItem('copper_pickaxe');
-
-    expect(result.isOk()).toBe(true);
-    expect(result._unsafeUnwrap().data.code).toBe('copper_pickaxe');
-  });
-
-  it('forwards content_code/content_type as query params and returns the map page', async () => {
-    let receivedQuery: Record<string, string> = {};
-
-    server.use(
-      http.get('https://api.artifactsmmo.com/maps', ({ request }) => {
-        receivedQuery = Object.fromEntries(new URL(request.url).searchParams);
-
-        return HttpResponse.json({
-          data: [{ map_id: 42, name: 'Copper Rocks', x: 2, y: 1 }],
-          page: 1,
-          pages: 1,
-          size: 50,
-          total: 1,
-        });
-      }),
-    );
-
-    const client = createArtifactsClient('test-token');
-    const result = await client.getMaps({
-      content_code: 'copper_rocks',
-      content_type: 'resource',
-    });
-
-    expect(receivedQuery).toEqual({
-      content_code: 'copper_rocks',
-      content_type: 'resource',
-    });
-    expect(result.isOk()).toBe(true);
-    expect(result._unsafeUnwrap().data).toEqual([
-      { map_id: 42, name: 'Copper Rocks', x: 2, y: 1 },
+    expect(receivedRequests).toEqual([
+      { name: 'Cartman', query: { size: '100' } },
+      { name: 'Stan', query: { size: '50' } },
+      { name: 'Kenny', query: {} },
     ]);
-  });
-
-  it('shares recent character logs instead of refetching them for every decision cycle', async () => {
-    let requestCount = 0;
-
-    server.use(
-      http.get('https://api.artifactsmmo.com/my/logs/:name', () => {
-        requestCount += 1;
-        return HttpResponse.json({
-          data: [],
-          page: 1,
-          pages: 1,
-          size: 100,
-          total: 0,
-        });
-      }),
-    );
-
-    const client = createArtifactsClient('test-token');
-
-    await client.getCharacterLogs('Cartman', { size: 100 });
-    await client.getCharacterLogs('Cartman', { size: 100 });
-
-    expect(requestCount).toBe(1);
-  });
-
-  it('invalidates cached bank data after a successful bank deposit', async () => {
-    let bankRequestCount = 0;
-
-    server.use(
-      http.get('https://api.artifactsmmo.com/my/bank/items', () => {
-        bankRequestCount += 1;
-        return HttpResponse.json({
-          data: [],
-          page: 1,
-          pages: 1,
-          size: 50,
-          total: 0,
-        });
-      }),
-      http.post(
-        'https://api.artifactsmmo.com/my/:name/action/bank/deposit/item',
-        () => HttpResponse.json({ data: {} }),
-      ),
-    );
-
-    const client = createArtifactsClient('test-token');
-
-    await client.getBankItems({ item_code: 'copper_ore' });
-    await client.getBankItems({ item_code: 'copper_ore' });
-    await client.depositItems('Cartman', [{ code: 'copper_ore', quantity: 1 }]);
-    await client.getBankItems({ item_code: 'copper_ore' });
-
-    expect(bankRequestCount).toBe(2);
   });
 });

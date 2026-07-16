@@ -6,7 +6,7 @@ import type { ResultAsync } from 'neverthrow';
  * result - meant for read-only endpoints whose data is static for as long as
  * the bot process runs (item/monster/resource/map catalogs), where re-fetching
  * the exact same query every cycle wastes a real request against the account's
- * hourly rate limit for no benefit (see `client/index.ts`'s rate limiter).
+ * hourly rate limit for no benefit (see `client/middleware.ts`).
  *
  * Only successful results are cached - a failed attempt (a transient network
  * issue, a rate limit, ...) is evicted immediately so the very next call

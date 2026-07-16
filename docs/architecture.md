@@ -39,9 +39,19 @@ will move incrementally into orchestration and bounded Activities.
 
 ## Client
 
-`src/client/index.ts` wraps `openapi-fetch` against the generated
-`src/client/schema.d.ts`. Every operation returns `ResultAsync` and therefore
-makes failure handling part of its Interface.
+`src/client/index.ts` composes focused functional wrappers around
+`openapi-fetch` and the generated `src/client/schema.d.ts`:
+
+- `transport.ts` creates the OpenAPI transport and converts responses to typed
+  `ResultAsync` values;
+- `middleware.ts` owns authentication and account-wide rate-limit policy;
+- `account.ts` owns dynamic character, bank, and log reads;
+- `catalog.ts` owns process-lifetime cached game-content reads;
+- `actions.ts` owns elementary Action requests and bank-cache invalidation;
+- `errors.ts` defines the typed API error payload.
+
+The composed Interface remains the only client dependency used by bot modules.
+Every operation returns `ResultAsync`, making failure handling explicit.
 
 The client also owns account-wide request protection:
 

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 
 import { createConfiguredCrewRuntime } from './bot/runtime/configuredCrewRuntime.js';
 import { runTaskSupervisor } from './bot/runtime/taskSupervisor.js';
-import { bot } from './client/index.js';
+import { createArtifactsClient } from './client/index.js';
 import { logger } from './utils/logger.js';
 import { loadOrchestrationConfig } from './utils/orchestrationConfig.js';
 import { loadTaskAssignments } from './utils/taskAssignments.js';
@@ -10,6 +10,8 @@ import { loadTaskAssignments } from './utils/taskAssignments.js';
 const ORCHESTRATION_CONFIG_PATH = 'orchestration.json';
 const TASK_RELOAD_INTERVAL_MS = 10_000;
 const TRANSIENT_RETRY_DELAY_MS = 10_000;
+
+const bot = createArtifactsClient();
 
 const waitBeforeRetry = (): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS));
