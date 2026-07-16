@@ -33,6 +33,7 @@ src/
     world.ts          Game-code to map resolution
     xpRates.ts        Observed combat XP/second
   client/             Typed Result-based Artifacts MMO client
+  persistence/        In-memory and SQLite persistence Adapters
   utils/              Configuration, logging, cooldowns, tasks.json adapter
 ```
 
@@ -394,9 +395,12 @@ orchestration the default and removing this fallback.
 ## Persistence
 
 SQLite will be introduced before autonomous orchestration becomes the default.
-An `OrchestratorStateRepository` Adapter will persist active Goals, ordering,
-origin, and prerequisite relationships without changing pure Goal Policy or
-Activity planning Interfaces. Startup loads durable Goals, clears ephemeral
+The `OrchestratorStateRepository` Port lives in `bot/orchestration/`; its
+in-memory and SQLite Adapters live in top-level `persistence/`. The in-memory
+Adapter already establishes copy isolation and restart-safe state boundaries.
+The SQLite Adapter will persist active Goals, ordering, origin, and prerequisite
+relationships without changing pure Goal Policy or Activity planning
+Interfaces. Startup loads durable Goals, clears ephemeral
 Reservations, observes a fresh Crew Snapshot, and reconciles already-satisfied
 Goals before replanning. Character and bank state remain authoritative in the
 Artifacts API.

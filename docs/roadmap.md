@@ -180,8 +180,9 @@ source of game truth or a place where strategy is implemented.
 
 - [x] Introduce an active-Goal representation that retains Goal data, priority,
       `parentGoalId`, origin, originating Goal Rule, and decision reason.
-- [ ] Define an `OrchestratorStateRepository` contract with in-memory and SQLite
-      implementations.
+- [x] Define an `OrchestratorStateRepository` Port and an isolated in-memory
+      Adapter.
+- [ ] Implement the SQLite `OrchestratorStateRepository` Adapter.
 - [ ] Add a versioned SQLite schema and forward-only migrations.
 - [ ] Persist Goal acceptance, completion, ordering, and prerequisite metadata
       transactionally.
