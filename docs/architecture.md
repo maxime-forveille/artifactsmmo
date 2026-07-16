@@ -259,10 +259,10 @@ oscillating on every snapshot.
 
 `orchestration/worldKnowledge.ts` reads every static item, monster, and resource
 catalog page into deterministic code-sorted collections. The underlying client
-caches those static page reads for the process lifetime. This loader is not yet
-called by the current explicit-Goal runtime; it becomes an explicit input when
-autonomous Goal Policy is wired, avoiding new startup GETs before the data is
-used. Recipes are embedded in items, and future market observations can extend
+caches those static page reads for the process lifetime. Configured orchestration
+loads this knowledge once when active Goals exist and passes it explicitly to
+planning. Autonomous Goal Policy will consume the same input without allowing
+Goal Rules to fetch their own data. Recipes are embedded in items, and future market observations can extend
 this input without allowing Goal Rules to fetch their own data.
 
 `orchestration/crewSnapshot.ts` reads all characters and every bank page into a
@@ -312,8 +312,10 @@ profession progression work.
 `orchestration/configuredGoalPlanner.ts` applies both transitions in global
 priority order. Proposals act as temporary Reservations during the same
 decision, allowing independent targets to use different idle characters without
-duplicating in-flight work. Exact catalog targets remain explicit planning
-inputs until automatic target selection is designed.
+duplicating in-flight work. It resolves item, recipe, material-source, and
+resource needs by domain code from shared `WorldKnowledge`, never by a mapping
+to configuration-specific Goal IDs. Exact targets remain explicit until
+automatic target selection is designed.
 
 `orchestration/activityLifecycle.ts` owns the pure Reservation transitions. A
 successfully started Activity is promoted from a proposal to a Reservation only
@@ -361,9 +363,10 @@ forever.
 ## Configuration and manual control
 
 Today, `orchestration.json` is the opt-in crew assignment source. When present,
-the entrypoint validates its ordered explicit Goals, resolves every resource and
-item, and starts the rolling orchestrator. Goal priority, bank thresholds, and
-resource codes must all be explicit; the Adapter supplies no defaults. The file
+the entrypoint validates its ordered explicit Goals, loads shared world
+knowledge, and starts the rolling orchestrator. Goal priority, bank thresholds,
+and configured resource choices remain explicit; the Adapter supplies no
+defaults. The file
 remains ignored as account-specific runtime configuration.
 
 Its target responsibility is policy rather than per-character assignment. The
@@ -423,12 +426,13 @@ is persisted before newly selected Activities launch. The database is closed
 when the runtime becomes idle or startup fails. Character and bank state remain
 authoritative in the Artifacts API.
 
-Equipment targets are resolved directly from restored Goals. Resource mappings
-for `replenishBankItem` are still keyed by explicit Goal IDs from
-`orchestration.json`. The SQLite Adapter can preserve autonomous, prerequisite,
-and override Goals, but the configured live runtime cannot safely resume every
-arbitrary persisted Goal until planning consumes Goal-independent
-`WorldKnowledge` instead of configuration-specific mappings.
+Restored equipment and bank-replenishment Goals resolve their targets from
+Goal-independent `WorldKnowledge`. A configured bank Goal preserves its selected
+`resourceCode`; older or autonomous Goals without one may proceed only when
+exactly one world resource produces the target item. Ambiguous sources remain a
+typed planning failure rather than triggering an arbitrary irreversible choice.
+Other persisted Goal types become fully restart-safe as their Activity planners
+are wired into the live runtime.
 
 A separate cache Adapter may share the database after durable state is proven.
 It will persist static world knowledge, rate-limit windows, and observations

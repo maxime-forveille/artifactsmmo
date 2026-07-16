@@ -12,6 +12,7 @@ import {
 import type {
   ActivityAssignment,
   OrchestratorState,
+  ReplenishBankItemGoal,
 } from './orchestratorState.js';
 import { reservedBankWithdrawalQuantity } from './reservationIntents.js';
 import {
@@ -19,6 +20,7 @@ import {
   type Resource,
   type ResourceReplenishmentError,
 } from './resourceReplenishment.js';
+import type { WorldKnowledge } from './worldKnowledge.js';
 
 type Item = Readonly<components['schemas']['ItemSchema']>;
 
@@ -27,18 +29,9 @@ type ConfiguredGoalPlan = Readonly<{
   state: OrchestratorState;
 }>;
 
-export type ResolvedGoalItem = Readonly<{ goalId: string; item: Item }>;
-
-export type ResolvedGoalMaterialItem = Readonly<{ goalId: string; item: Item }>;
-
-export type ResolvedGoalMaterialSource = Readonly<{
-  goalId: string;
-  materialSource: EquipmentMaterialSource;
-}>;
-
-export type ResolvedGoalResource = Readonly<{
-  goalId: string;
-  resource: Resource;
+export type EquipmentKnowledge = Readonly<{
+  items: readonly Item[];
+  sources: readonly EquipmentMaterialSource[];
 }>;
 
 export class GoalItemNotResolvedError extends Error {
@@ -105,37 +98,127 @@ const isCompletedGoalStillSatisfied = (
   return projectedQuantity >= goal.minimumBankQuantity;
 };
 
+const findUnique = <T>(values: readonly T[]): T | undefined =>
+  values.length === 1 ? values[0] : undefined;
+
+const resolveResource = (
+  knowledge: WorldKnowledge,
+  goal: ReplenishBankItemGoal,
+): Resource | undefined =>
+  goal.resourceCode === undefined
+    ? findUnique(
+        knowledge.resources.filter((resource) =>
+          resource.drops.some((drop) => drop.code === goal.itemCode),
+        ),
+      )
+    : knowledge.resources.find(
+        (resource) => resource.code === goal.resourceCode,
+      );
+
+const resolveMaterialSource = (
+  knowledge: WorldKnowledge,
+  itemCode: string,
+): EquipmentMaterialSource | undefined => {
+  const sources: EquipmentMaterialSource[] = [
+    ...knowledge.monsters
+      .filter((monster) => monster.drops.some((drop) => drop.code === itemCode))
+      .map((monster) => ({
+        itemCode,
+        source: { monster, type: 'monster' as const },
+      })),
+    ...knowledge.resources
+      .filter((resource) =>
+        resource.drops.some((drop) => drop.code === itemCode),
+      )
+      .map((resource) => ({
+        itemCode,
+        source: { resource, type: 'gather' as const },
+      })),
+  ];
+
+  return findUnique(sources);
+};
+
+const mergeEquipmentKnowledge = (
+  groups: readonly EquipmentKnowledge[],
+): EquipmentKnowledge => ({
+  items: [
+    ...new Map(
+      groups.flatMap((group) => group.items).map((item) => [item.code, item]),
+    ).values(),
+  ],
+  sources: [
+    ...new Map(
+      groups
+        .flatMap((group) => group.sources)
+        .map((source) => [source.itemCode, source]),
+    ).values(),
+  ],
+});
+
+const resolveMaterialTree = (
+  knowledge: WorldKnowledge,
+  itemsByCode: ReadonlyMap<string, Item>,
+  itemCode: string,
+  ancestors: ReadonlySet<string>,
+): EquipmentKnowledge => {
+  if (ancestors.has(itemCode)) {
+    return { items: [], sources: [] };
+  }
+
+  const item = itemsByCode.get(itemCode);
+  if (item === undefined) {
+    return { items: [], sources: [] };
+  }
+
+  if (item.craft?.skill === undefined) {
+    const source = resolveMaterialSource(knowledge, item.code);
+    return { items: [item], sources: source === undefined ? [] : [source] };
+  }
+
+  const nextAncestors = new Set([...ancestors, item.code]);
+  const materialCodes = [
+    ...new Set((item.craft.items ?? []).map((material) => material.code)),
+  ];
+  const descendants = materialCodes.map((materialCode) =>
+    resolveMaterialTree(knowledge, itemsByCode, materialCode, nextAncestors),
+  );
+
+  return mergeEquipmentKnowledge([
+    { items: [item], sources: [] },
+    ...descendants,
+  ]);
+};
+
+export const resolveEquipmentKnowledge = (
+  knowledge: WorldKnowledge,
+  item: Item,
+): EquipmentKnowledge => {
+  const itemsByCode = new Map(
+    knowledge.items.map((knownItem) => [knownItem.code, knownItem] as const),
+  );
+  const materialCodes = [
+    ...new Set((item.craft?.items ?? []).map((material) => material.code)),
+  ];
+  const ancestors = new Set([item.code]);
+
+  return mergeEquipmentKnowledge(
+    materialCodes.map((materialCode) =>
+      resolveMaterialTree(knowledge, itemsByCode, materialCode, ancestors),
+    ),
+  );
+};
+
 /**
- * Plans every configured Goal in global priority order. Proposed assignments
- * act as temporary Reservations while the same decision examines later Goals.
+ * Plans every active Goal in global priority order from shared world knowledge.
+ * Proposed assignments act as temporary Reservations while the same decision
+ * examines later Goals.
  */
 export const createConfiguredGoalPlanner = (
-  resolvedItems: readonly ResolvedGoalItem[],
-  resolvedResources: readonly ResolvedGoalResource[],
-  resolvedMaterialSources: readonly ResolvedGoalMaterialSource[] = [],
-  resolvedMaterialItems: readonly ResolvedGoalMaterialItem[] = [],
+  knowledge: WorldKnowledge,
 ): ConfiguredGoalPlanner => {
-  const itemsByGoalId = new Map(
-    resolvedItems.map(({ goalId, item }) => [goalId, item]),
-  );
-  const resourcesByGoalId = new Map(
-    resolvedResources.map(({ goalId, resource }) => [goalId, resource]),
-  );
-  const materialSourcesByGoalId = resolvedMaterialSources.reduce(
-    (byGoalId, resolvedSource) => {
-      const existing = byGoalId.get(resolvedSource.goalId) ?? [];
-      byGoalId.set(resolvedSource.goalId, [...existing, resolvedSource]);
-      return byGoalId;
-    },
-    new Map<string, readonly ResolvedGoalMaterialSource[]>(),
-  );
-  const materialItemsByGoalId = resolvedMaterialItems.reduce(
-    (byGoalId, resolvedItem) => {
-      const existing = byGoalId.get(resolvedItem.goalId) ?? [];
-      byGoalId.set(resolvedItem.goalId, [...existing, resolvedItem.item]);
-      return byGoalId;
-    },
-    new Map<string, readonly Item[]>(),
+  const itemsByCode = new Map(
+    knowledge.items.map((item) => [item.code, item] as const),
   );
 
   return (snapshot, state, previousOutcome) => {
@@ -151,25 +234,27 @@ export const createConfiguredGoalPlanner = (
       const planned =
         goal.type === 'equipItem'
           ? (() => {
-              const item = itemsByGoalId.get(goal.id);
+              const item = itemsByCode.get(goal.itemCode);
+              if (item === undefined) {
+                return err(new GoalItemNotResolvedError(goal.id));
+              }
 
-              return item === undefined
-                ? err(new GoalItemNotResolvedError(goal.id))
-                : planEquipmentProgression(
-                    snapshot,
-                    planningState,
-                    item,
-                    previousOutcome,
-                    (materialSourcesByGoalId.get(goal.id) ?? []).map(
-                      ({ materialSource }) => materialSource,
-                    ),
-                    materialItemsByGoalId.get(goal.id) ?? [],
-                  );
+              const equipmentKnowledge = resolveEquipmentKnowledge(
+                knowledge,
+                item,
+              );
+              return planEquipmentProgression(
+                snapshot,
+                planningState,
+                item,
+                previousOutcome,
+                equipmentKnowledge.sources,
+                equipmentKnowledge.items,
+              );
             })()
           : goal.type === 'replenishBankItem'
             ? (() => {
-                const resource = resourcesByGoalId.get(goal.id);
-
+                const resource = resolveResource(knowledge, goal);
                 return resource === undefined
                   ? err(new GoalResourceNotResolvedError(goal.id))
                   : planResourceReplenishment(

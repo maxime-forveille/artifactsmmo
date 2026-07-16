@@ -87,6 +87,7 @@ export const buildInitialOrchestratorState = (
           itemCode: goal.itemCode,
           minimumBankQuantity: goal.minimumBankQuantity,
           origin: 'configured' as const,
+          resourceCode: goal.resourceCode,
           type: goal.type,
         },
   ),

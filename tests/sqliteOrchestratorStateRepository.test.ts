@@ -50,6 +50,7 @@ const prerequisiteGoal: ActiveGoal = {
   origin: 'prerequisite',
   parentGoalId: configuredGoal.id,
   reason: 'Acquire materials for the parent Goal',
+  resourceCode: 'copper_rocks',
   rule: 'equipmentUpgrade',
   type: 'replenishBankItem',
 };

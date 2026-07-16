@@ -71,13 +71,16 @@ artifactsmmo-crew.sqlite
 ```
 
 Each startup applies forward-only migrations, restores durable Goals, discards
-all process-local Reservations, and observes fresh character and bank state from
-the Artifacts API. A Goal already satisfied by that observation is completed and
-the resulting state is saved before any newly planned Activity starts.
+all process-local Reservations, and, when Goals remain, reads shared static world
+knowledge before observing fresh character and bank state from the Artifacts API.
+A Goal already satisfied by that observation is completed and the resulting
+state is saved before any newly planned Activity starts.
 
-`tsx watch` restarts therefore retain Goals but never assume that interrupted
-work is still running. An Action sent before shutdown may still have completed
-on the server; the fresh Crew Snapshot is responsible for reconciliation.
+`tsx watch` restarts therefore retain Goals and their selected resource codes but
+never assume that interrupted work is still running. An Action sent before
+shutdown may still have completed on the server; the fresh Crew Snapshot is
+responsible for reconciliation. Older or autonomous resource Goals without a
+selected source require exactly one matching resource in world knowledge.
 
 To intentionally reset durable orchestration intent:
 

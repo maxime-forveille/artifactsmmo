@@ -338,7 +338,7 @@ describe('buildInitialOrchestratorState', () => {
     });
   });
 
-  it('removes Adapter-only resource codes from the domain state', () => {
+  it('preserves selected resource codes in durable domain state', () => {
     const config = parseOrchestrationConfig(buildRawConfig());
 
     expect(buildInitialOrchestratorState(config)).toEqual({
@@ -348,6 +348,7 @@ describe('buildInitialOrchestratorState', () => {
           itemCode: 'copper_ore',
           minimumBankQuantity: 50,
           origin: 'configured',
+          resourceCode: 'copper_rocks',
           type: 'replenishBankItem',
         },
         {
@@ -355,6 +356,7 @@ describe('buildInitialOrchestratorState', () => {
           itemCode: 'ash_wood',
           minimumBankQuantity: 25,
           origin: 'configured',
+          resourceCode: 'ash_tree',
           type: 'replenishBankItem',
         },
       ],

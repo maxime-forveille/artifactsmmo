@@ -4,6 +4,7 @@ import {
   createConfiguredGoalPlanner,
   GoalItemNotResolvedError,
   GoalResourceNotResolvedError,
+  resolveEquipmentKnowledge,
 } from '../src/bot/orchestration/configuredGoalPlanner.js';
 import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
 import type {
@@ -16,17 +17,30 @@ import {
   InvalidResourceTargetError,
   type Resource,
 } from '../src/bot/orchestration/resourceReplenishment.js';
+import type { WorldKnowledge } from '../src/bot/orchestration/worldKnowledge.js';
 import type { components } from '../src/client/schema.js';
 
 type Character = components['schemas']['CharacterSchema'];
 type Item = components['schemas']['ItemSchema'];
+type Monster = components['schemas']['MonsterSchema'];
 
 const buildCharacter = (name: string): Character => ({
   ...({} as Character),
+  attack_air: 0,
+  attack_earth: 10,
+  attack_fire: 0,
+  attack_water: 0,
+  critical_strike: 0,
+  hp: 100,
   inventory: [],
   level: 10,
+  max_hp: 100,
   mining_level: 10,
   name,
+  res_air: 0,
+  res_earth: 0,
+  res_fire: 0,
+  res_water: 0,
   weapon_slot: 'wooden_stick',
   weaponcrafting_level: 10,
   woodcutting_level: 10,
@@ -59,13 +73,39 @@ const buildItem = (): Item => ({
   type: 'weapon',
 });
 
+const buildRawItem = (code: string): Item => ({ ...({} as Item), code });
+
+const buildMonster = (itemCode: string): Monster => ({
+  ...({} as Monster),
+  attack_air: 0,
+  attack_earth: 1,
+  attack_fire: 0,
+  attack_water: 0,
+  code: 'yellow_slime',
+  critical_strike: 0,
+  drops: [
+    { code: 'unrelated_drop', max_quantity: 1, min_quantity: 1, rate: 1 },
+    { code: itemCode, max_quantity: 1, min_quantity: 1, rate: 1 },
+  ],
+  hp: 10,
+  level: 2,
+  name: 'Yellow Slime',
+  res_air: 0,
+  res_earth: 0,
+  res_fire: 0,
+  res_water: 0,
+});
+
 const buildResource = (
   code: string,
   itemCode: string,
   skill: Resource['skill'],
 ): Resource => ({
   code,
-  drops: [{ code: itemCode, max_quantity: 1, min_quantity: 1, rate: 1 }],
+  drops: [
+    { code: 'unrelated_drop', max_quantity: 1, min_quantity: 1, rate: 1 },
+    { code: itemCode, max_quantity: 1, min_quantity: 1, rate: 1 },
+  ],
   level: 1,
   name: code,
   skill,
@@ -86,13 +126,13 @@ const buildSnapshot = (bank: CrewSnapshot['bank'] = []): CrewSnapshot => ({
   characters: [buildCharacter('Stan')],
 });
 
+const buildKnowledge = (
+  overrides: Partial<WorldKnowledge> = {},
+): WorldKnowledge => ({ items: [], monsters: [], resources: [], ...overrides });
+
 const buildPlanner = () =>
   createConfiguredGoalPlanner(
-    [],
-    [
-      { goalId: copperGoal.id, resource: copperResource },
-      { goalId: ashGoal.id, resource: ashResource },
-    ],
+    buildKnowledge({ resources: [copperResource, ashResource] }),
   );
 
 describe('createConfiguredGoalPlanner', () => {
@@ -163,8 +203,7 @@ describe('createConfiguredGoalPlanner', () => {
     const equipmentGoal = buildEquipmentGoal();
     const state = buildState([equipmentGoal, copperGoal]);
     const planner = createConfiguredGoalPlanner(
-      [{ goalId: equipmentGoal.id, item: buildItem() }],
-      [{ goalId: copperGoal.id, resource: copperResource }],
+      buildKnowledge({ items: [buildItem()], resources: [copperResource] }),
     );
     const snapshot = {
       ...buildSnapshot(),
@@ -219,11 +258,7 @@ describe('createConfiguredGoalPlanner', () => {
     const sword = { ...dagger, code: 'copper_sword' };
     const state = buildState([stanGoal, kyleGoal]);
     const planner = createConfiguredGoalPlanner(
-      [
-        { goalId: stanGoal.id, item: dagger },
-        { goalId: kyleGoal.id, item: sword },
-      ],
-      [],
+      buildKnowledge({ items: [dagger, sword] }),
     );
     const snapshot = {
       ...buildSnapshot([{ code: 'copper_bar', quantity: 2 }]),
@@ -268,8 +303,7 @@ describe('createConfiguredGoalPlanner', () => {
     const barResource = buildResource('copper_rocks', 'copper_bar', 'mining');
     const state = buildState([equipmentGoal, replenishGoal]);
     const planner = createConfiguredGoalPlanner(
-      [{ goalId: equipmentGoal.id, item }],
-      [{ goalId: replenishGoal.id, resource: barResource }],
+      buildKnowledge({ items: [item], resources: [barResource] }),
     );
     const snapshot = {
       ...buildSnapshot([{ code: 'copper_bar', quantity: 2 }]),
@@ -321,8 +355,7 @@ describe('createConfiguredGoalPlanner', () => {
     const barResource = buildResource('copper_rocks', 'copper_bar', 'mining');
     const state = buildState([replenishGoal, equipmentGoal]);
     const planner = createConfiguredGoalPlanner(
-      [{ goalId: equipmentGoal.id, item }],
-      [{ goalId: replenishGoal.id, resource: barResource }],
+      buildKnowledge({ items: [item], resources: [barResource] }),
     );
     const snapshot = {
       ...buildSnapshot([{ code: 'copper_bar', quantity: 2 }]),
@@ -349,6 +382,90 @@ describe('createConfiguredGoalPlanner', () => {
     });
   });
 
+  it('ignores unrelated bank items when evaluating a resource Goal', () => {
+    const result = buildPlanner()(
+      buildSnapshot([{ code: 'ash_wood', quantity: 50 }]),
+      buildState([copperGoal]),
+    );
+
+    expect(result._unsafeUnwrap().activities).toEqual([
+      {
+        activity: { resourceCode: 'copper_rocks', type: 'farmResource' },
+        characterName: 'Stan',
+        consumes: [],
+        goalId: 'goal-copper',
+        produces: [{ itemCode: 'copper_ore' }],
+      },
+    ]);
+  });
+
+  it('does not count a withdrawal of another item against satisfied stock', () => {
+    const equipmentGoal = buildEquipmentGoal();
+    const item = {
+      ...buildItem(),
+      craft: {
+        items: [{ code: 'ash_wood', quantity: 2 }],
+        level: 5,
+        quantity: 1,
+        skill: 'weaponcrafting' as const,
+      },
+    };
+    const state = buildState([equipmentGoal, copperGoal]);
+    const planner = createConfiguredGoalPlanner(
+      buildKnowledge({
+        items: [item, buildRawItem('ash_wood')],
+        resources: [copperResource],
+      }),
+    );
+
+    const result = planner(
+      buildSnapshot([
+        { code: 'ash_wood', quantity: 2 },
+        { code: 'copper_ore', quantity: 50 },
+      ]),
+      state,
+    );
+
+    expect(result._unsafeUnwrap().state.goals).toEqual([equipmentGoal]);
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      itemCode: 'ash_wood',
+      quantity: 2,
+      type: 'withdrawItem',
+    });
+  });
+
+  it('does not count a non-withdrawal Activity against satisfied stock', () => {
+    const equipmentGoal: ActiveGoal & EquipItemGoal = {
+      characterName: 'Stan',
+      id: 'equip-stan-copper-ore',
+      itemCode: 'copper_ore',
+      origin: 'configured',
+      type: 'equipItem',
+    };
+    const item = { ...buildItem(), code: 'copper_ore' };
+    const state = buildState([equipmentGoal, copperGoal]);
+    const planner = createConfiguredGoalPlanner(
+      buildKnowledge({ items: [item], resources: [copperResource] }),
+    );
+    const snapshot = {
+      ...buildSnapshot([{ code: 'copper_ore', quantity: 50 }]),
+      characters: [
+        {
+          ...buildCharacter('Stan'),
+          inventory: [{ code: 'copper_ore', quantity: 1, slot: 0 }],
+        },
+      ],
+    };
+
+    const result = planner(snapshot, state);
+
+    expect(result._unsafeUnwrap().state.goals).toEqual([equipmentGoal]);
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      itemCode: 'copper_ore',
+      type: 'equipItem',
+    });
+  });
+
   it('uses a resolved material source for an equipment prerequisite', () => {
     const equipmentGoal = buildEquipmentGoal();
     const item = buildItem();
@@ -368,19 +485,12 @@ describe('createConfiguredGoalPlanner', () => {
         skill: 'weaponcrafting' as const,
       },
     };
+    const copperOre = { ...({} as Item), code: 'copper_ore' };
     const planner = createConfiguredGoalPlanner(
-      [{ goalId: equipmentGoal.id, item }],
-      [],
-      [
-        {
-          goalId: equipmentGoal.id,
-          materialSource: {
-            itemCode: 'copper_ore',
-            source: { resource: copperResource, type: 'gather' },
-          },
-        },
-      ],
-      [{ goalId: equipmentGoal.id, item: copperBar }],
+      buildKnowledge({
+        items: [item, copperBar, copperOre],
+        resources: [copperResource],
+      }),
     );
     const snapshot = {
       ...buildSnapshot(),
@@ -400,12 +510,84 @@ describe('createConfiguredGoalPlanner', () => {
     ]);
   });
 
+  it('resolves a unique monster source for a raw equipment material', () => {
+    const equipmentGoal = buildEquipmentGoal();
+    const item = {
+      ...buildItem(),
+      craft: {
+        items: [{ code: 'yellow_slimeball', quantity: 1 }],
+        level: 5,
+        quantity: 1,
+        skill: 'weaponcrafting' as const,
+      },
+    };
+    const planner = createConfiguredGoalPlanner(
+      buildKnowledge({
+        items: [item, buildRawItem('yellow_slimeball')],
+        monsters: [buildMonster('yellow_slimeball')],
+      }),
+    );
+    const snapshot = {
+      ...buildSnapshot(),
+      characters: [buildCharacter('Stan'), buildCharacter('Cartman')],
+    };
+
+    const result = planner(snapshot, buildState([equipmentGoal]));
+
+    expect(result._unsafeUnwrap().activities).toEqual([
+      {
+        activity: { monsterCode: 'yellow_slime', type: 'fightMonster' },
+        characterName: 'Cartman',
+        consumes: [],
+        goalId: 'equip-stan-dagger',
+        produces: [{ itemCode: 'yellow_slimeball' }],
+      },
+    ]);
+  });
+
+  it('does not choose an ambiguous source for an equipment material', () => {
+    const item = buildItem();
+    item.craft = {
+      items: [{ code: 'copper_ore', quantity: 1 }],
+      level: 5,
+      quantity: 1,
+      skill: 'weaponcrafting',
+    };
+    expect(item.craft?.items).toEqual([{ code: 'copper_ore', quantity: 1 }]);
+    const copperOre = buildRawItem('copper_ore');
+    const knowledge = buildKnowledge({
+      items: [item, copperOre],
+      monsters: [buildMonster('copper_ore')],
+      resources: [copperResource],
+    });
+
+    expect(resolveEquipmentKnowledge(knowledge, item)).toEqual({
+      items: [copperOre],
+      sources: [],
+    });
+  });
+
+  it('reports no knowledge when an equipment material is absent', () => {
+    const item = buildItem();
+    item.craft = {
+      items: [{ code: 'unknown_material', quantity: 1 }],
+      level: 5,
+      quantity: 1,
+      skill: 'weaponcrafting',
+    };
+    const knowledge = buildKnowledge({ items: [item] });
+
+    expect(resolveEquipmentKnowledge(knowledge, item)).toEqual({
+      items: [],
+      sources: [],
+    });
+  });
+
   it('continues lower-priority work after an equipment Activity is blocked', () => {
     const equipmentGoal = buildEquipmentGoal();
     const state = buildState([equipmentGoal, copperGoal]);
     const planner = createConfiguredGoalPlanner(
-      [{ goalId: equipmentGoal.id, item: buildItem() }],
-      [{ goalId: copperGoal.id, resource: copperResource }],
+      buildKnowledge({ items: [buildItem()], resources: [copperResource] }),
     );
     const snapshot = {
       ...buildSnapshot(),
@@ -491,11 +673,11 @@ describe('createConfiguredGoalPlanner', () => {
 
   it('propagates a resource validation failure', () => {
     const planner = createConfiguredGoalPlanner(
-      [],
-      [{ goalId: copperGoal.id, resource: ashResource }],
+      buildKnowledge({ resources: [ashResource] }),
     );
+    const invalidGoal = { ...copperGoal, resourceCode: ashResource.code };
 
-    const result = planner(buildSnapshot(), buildState([copperGoal]));
+    const result = planner(buildSnapshot(), buildState([invalidGoal]));
 
     expect(result.isErr()).toBe(true);
     expect(result._unsafeUnwrapErr()).toEqual(
@@ -505,7 +687,7 @@ describe('createConfiguredGoalPlanner', () => {
 
   it('returns a typed error when an equipment Goal has no resolved item', () => {
     const equipmentGoal = buildEquipmentGoal();
-    const planner = createConfiguredGoalPlanner([], []);
+    const planner = createConfiguredGoalPlanner(buildKnowledge());
 
     const result = planner(buildSnapshot(), buildState([equipmentGoal]));
 
@@ -518,8 +700,36 @@ describe('createConfiguredGoalPlanner', () => {
     expect(result._unsafeUnwrapErr()).toBeInstanceOf(GoalItemNotResolvedError);
   });
 
-  it('returns a typed error when a Goal has no resolved resource', () => {
-    const planner = createConfiguredGoalPlanner([], []);
+  it('uses a preferred resource when several resources produce the item', () => {
+    const richCopperResource = buildResource(
+      'rich_copper_rocks',
+      'copper_ore',
+      'mining',
+    );
+    const goal = { ...copperGoal, resourceCode: richCopperResource.code };
+    const planner = createConfiguredGoalPlanner(
+      buildKnowledge({ resources: [copperResource, richCopperResource] }),
+    );
+
+    const result = planner(buildSnapshot(), buildState([goal]));
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      resourceCode: 'rich_copper_rocks',
+      type: 'farmResource',
+    });
+  });
+
+  it.each([
+    ['no resource exists', []],
+    [
+      'several resources produce the item without a preferred source',
+      [
+        copperResource,
+        buildResource('rich_copper_rocks', 'copper_ore', 'mining'),
+      ],
+    ],
+  ])('returns a typed error when %s', (_reason, resources) => {
+    const planner = createConfiguredGoalPlanner(buildKnowledge({ resources }));
 
     const result = planner(buildSnapshot(), buildState([copperGoal]));
 

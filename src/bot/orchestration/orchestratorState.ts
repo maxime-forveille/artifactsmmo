@@ -20,6 +20,8 @@ export type ReplenishBankItemGoal = Readonly<{
   id: string;
   itemCode: string;
   minimumBankQuantity: number;
+  /** Preferred source when policy has already selected one. */
+  resourceCode?: string | undefined;
   type: 'replenishBankItem';
 }>;
 

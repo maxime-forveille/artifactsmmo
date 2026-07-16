@@ -42,6 +42,7 @@ const goalSchema = v.variant('type', [
     id: nonEmptyStringSchema,
     itemCode: nonEmptyStringSchema,
     minimumBankQuantity: positiveIntegerSchema,
+    resourceCode: v.optional(nonEmptyStringSchema),
     type: v.literal('replenishBankItem'),
   }),
 ]);

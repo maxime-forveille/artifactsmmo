@@ -192,8 +192,10 @@ source of game truth or a place where strategy is implemented.
       never be reconstructed as running work.
 - [x] Complete Goals already satisfied by observed API state before proposing
       replacements.
-- [ ] Preserve one-shot overrides and blocked parent Goals across restarts in the
-      live runtime, including Goal-independent catalog resolution.
+- [x] Resolve restored equipment and bank-replenishment Goals from
+      Goal-independent world knowledge rather than configuration Goal IDs.
+- [ ] Preserve one-shot overrides and blocked parent Goals across restarts for
+      every Goal type wired into the live runtime.
 - [x] Keep Character state, inventory, equipment, cooldowns, and bank contents
       authoritative in the Artifacts API rather than duplicated local state.
 - [x] Add restart and migration tests using isolated temporary databases.

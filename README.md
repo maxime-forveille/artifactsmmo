@@ -110,12 +110,14 @@ requires `id`, `itemCode`, `minimumBankQuantity`, and `resourceCode`. An
 }
 ```
 
-The equipment Goal resolves its recipe tree, retrieves banked inputs, crafts
-intermediates, then crafts and equips the target. When a missing raw material
-has exactly one resource or monster source, an eligible crew member acquires it.
-Eligible characters can craft intermediate or target items for one another;
-their output returns to the bank before the consumer continues. Ambiguous
-sources and insufficient crew profession levels remain blocked.
+At startup, active Goals resolve against one shared `WorldKnowledge` catalogue
+of items, monsters, and resources. The equipment Goal resolves its recipe tree,
+retrieves banked inputs, crafts intermediates, then crafts and equips the target.
+When a missing raw material has exactly one resource or monster source, an
+eligible crew member acquires it. Eligible characters can craft intermediate or
+target items for one another; their output returns to the bank before the
+consumer continues. Ambiguous sources and insufficient crew profession levels
+remain blocked.
 
 `orchestration.json` is becoming a strategy file rather than a replacement
 `tasks.json`. During migration, `policy.goalRuleOrder` is accepted alongside the
@@ -143,8 +145,9 @@ later migration steps.
 
 Configured orchestration persists active Goals in the ignored local file
 `artifactsmmo-crew.sqlite`. On restart it restores those Goals with no active
-Reservations, observes a fresh Crew Snapshot, and records any reconciled state
-before launching more Activities. Delete the database only when intentionally
+Reservations, resolves their catalog needs independently of the current JSON,
+observes a fresh Crew Snapshot, and records any reconciled state before
+launching more Activities. Delete the database only when intentionally
 resetting durable orchestration intent; the next start recreates its schema and
 falls back to the Goals in `orchestration.json`.
 
