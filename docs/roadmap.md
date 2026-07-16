@@ -76,7 +76,7 @@ new orchestration Interface.
       recursively.
 - [x] Return typed Blockers for missing prerequisites.
 - [x] Run explicit equipment Goals through targeted withdraw, craft, and equip
-      steps.
+      steps, including direct recipe materials already in the bank.
 
 ### 3. Rolling scheduler
 

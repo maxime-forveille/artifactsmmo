@@ -152,6 +152,97 @@ describe("planEquipmentProgression", () => {
     });
   });
 
+  it("withdraws a missing recipe material before crafting the target", () => {
+    const state = buildState();
+    const result = planEquipmentProgression(
+      buildSnapshot({ bank: [{ code: "copper_bar", quantity: 5 }] }),
+      state,
+      buildItem(),
+    );
+
+    expect(result._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: { itemCode: "copper_bar", quantity: 2, type: "withdrawItem" },
+          characterName: "Stan",
+          consumes: [{ itemCode: "copper_bar" }],
+          goalId: "equip-stan-dagger",
+          produces: [],
+        },
+      ],
+      state,
+    });
+  });
+
+  it("withdraws only the remaining recipe quantity", () => {
+    const character = buildCharacter({
+      inventory: [{ code: "copper_bar", quantity: 1, slot: 1 }],
+    });
+    const result = planEquipmentProgression(
+      buildSnapshot({
+        bank: [{ code: "copper_bar", quantity: 5 }],
+        characters: [character],
+      }),
+      buildState(),
+      buildItem(),
+    );
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      itemCode: "copper_bar",
+      quantity: 1,
+      type: "withdrawItem",
+    });
+  });
+
+  it("does not withdraw a recipe material already held in full", () => {
+    const character = buildCharacter({
+      inventory: [{ code: "copper_bar", quantity: 2, slot: 1 }],
+    });
+    const result = planEquipmentProgression(
+      buildSnapshot({
+        bank: [{ code: "copper_bar", quantity: 5 }],
+        characters: [character],
+      }),
+      buildState(),
+      buildItem(),
+    );
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      itemCode: "copper_dagger",
+      quantity: 1,
+      type: "craftItem",
+    });
+  });
+
+  it("crafts a recipe that declares no material list", () => {
+    const item = buildItem({ craft: { skill: "weaponcrafting" } });
+
+    const result = planEquipmentProgression(buildSnapshot(), buildState(), item);
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      itemCode: "copper_dagger",
+      quantity: 1,
+      type: "craftItem",
+    });
+  });
+
+  it("crafts once every direct recipe material is already held", () => {
+    const character = buildCharacter({
+      inventory: [{ code: "copper_bar", quantity: 2, slot: 1 }],
+    });
+    const result = planEquipmentProgression(
+      buildSnapshot({ characters: [character] }),
+      buildState(),
+      buildItem(),
+    );
+
+    expect(result._unsafeUnwrap().activities[0]?.activity).toEqual({
+      itemCode: "copper_dagger",
+      quantity: 1,
+      type: "craftItem",
+    });
+  });
+
   it("ignores unrelated bank items when deciding whether to craft", () => {
     const result = planEquipmentProgression(
       buildSnapshot({ bank: [{ code: "iron_ore", quantity: 100 }] }),

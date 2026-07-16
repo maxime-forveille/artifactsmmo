@@ -175,10 +175,10 @@ Goal, avoids work already reserved, excludes busy characters, and otherwise
 proposes one `farmResource` Activity for the strongest eligible gatherer.
 
 `orchestration/equipmentProgression.ts` advances an explicit character equipment
-Goal. It retrieves a banked target, crafts an absent craftable target, equips it
-once held, and completes when the expected slot contains it. A blocked craft or
-equip stays idle for a later planner layer to turn into material or profession
-Goals.
+Goal. It retrieves a banked target and direct recipe materials, crafts an absent
+craftable target, equips it once held, and completes when the expected slot
+contains it. A blocked craft or equip stays idle for a later planner layer to
+turn into material or profession Goals.
 
 `orchestration/configuredGoalPlanner.ts` applies both transitions in global
 priority order. Proposals act as temporary Reservations during the same

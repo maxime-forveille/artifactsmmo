@@ -11,6 +11,7 @@ import { heldQuantity } from "../inventory.js";
 import type { CrewSnapshot } from "./crewSnapshot.js";
 import type { ActivityAssignment, OrchestratorState } from "./orchestratorState.js";
 
+type Character = Readonly<components["schemas"]["CharacterSchema"]>;
 type Item = Readonly<components["schemas"]["ItemSchema"]>;
 type EquipmentActivity = CraftItemActivity | EquipItemActivity | WithdrawItemActivity;
 
@@ -53,6 +54,25 @@ const unchangedPlan = (state: OrchestratorState): EquipmentProgressionPlan => ({
   activities: [],
   state,
 });
+
+const materialWithdrawalFor = (
+  snapshot: CrewSnapshot,
+  character: Character,
+  item: Item,
+): WithdrawItemActivity | undefined => {
+  return (item.craft?.items ?? [])
+    .map(
+      (material): WithdrawItemActivity => ({
+        itemCode: material.code,
+        quantity: Math.min(
+          material.quantity - heldQuantity(character, material.code),
+          bankQuantity(snapshot, material.code),
+        ),
+        type: "withdrawItem",
+      }),
+    )
+    .find((activity) => activity.quantity > 0);
+};
 
 /**
  * Advances one explicit equipment Goal by one bounded step. A blocked step is
@@ -119,20 +139,23 @@ export const planEquipmentProgression = (
 
   const isHeld = heldQuantity(character, item.code) > 0;
   const isBanked = bankQuantity(snapshot, item.code) > 0;
+  const materialWithdrawal = materialWithdrawalFor(snapshot, character, item);
   const activity: EquipmentActivity = isHeld
     ? { itemCode: item.code, type: "equipItem" }
     : isBanked
       ? { itemCode: item.code, quantity: 1, type: "withdrawItem" }
-      : item.craft?.skill !== undefined
-        ? { itemCode: item.code, quantity: 1, type: "craftItem" }
-        : { itemCode: item.code, type: "equipItem" };
+      : materialWithdrawal !== undefined
+        ? materialWithdrawal
+        : item.craft?.skill !== undefined
+          ? { itemCode: item.code, quantity: 1, type: "craftItem" }
+          : { itemCode: item.code, type: "equipItem" };
 
   return ok({
     activities: [
       {
         activity,
         characterName: character.name,
-        consumes: activity.type === "craftItem" ? [] : [{ itemCode: item.code }],
+        consumes: activity.type === "craftItem" ? [] : [{ itemCode: activity.itemCode }],
         goalId: goal.id,
         produces: activity.type === "craftItem" ? [{ itemCode: item.code }] : [],
       },
