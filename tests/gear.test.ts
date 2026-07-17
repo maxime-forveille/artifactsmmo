@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   findBestCombatGear,
+  findBestCombatGearFromCatalog,
   findBestGatheringTool,
   findCombatGearUpgrades,
 } from '../src/bot/gear.js';
@@ -137,6 +138,82 @@ describe('findBestGatheringTool', () => {
   });
 });
 
+describe('findBestCombatGearFromCatalog', () => {
+  it('uses item code as a stable tie-breaker', () => {
+    const character = buildCharacter({ attack_earth: 1 });
+    const monster = buildMonster({ attack_earth: 20 });
+    const zWeapon = buildItem({
+      code: 'z_weapon',
+      effects: [{ code: 'attack_earth', description: '', value: 20 }],
+    });
+    const aWeapon = buildItem({
+      code: 'a_weapon',
+      effects: [{ code: 'attack_earth', description: '', value: 20 }],
+    });
+
+    expect(
+      findBestCombatGearFromCatalog(character, monster, 'weapon', [
+        zWeapon,
+        aWeapon,
+      ]),
+    ).toEqual({ item: aWeapon, margin: 1.75 });
+  });
+
+  it('keeps the lowest code when equal candidates arrive in either order', () => {
+    const character = buildCharacter({ attack_earth: 1 });
+    const monster = buildMonster({ attack_earth: 20 });
+    const aWeapon = buildItem({
+      code: 'a_weapon',
+      effects: [{ code: 'attack_earth', description: '', value: 20 }],
+    });
+    const zWeapon = buildItem({
+      code: 'z_weapon',
+      effects: [{ code: 'attack_earth', description: '', value: 20 }],
+    });
+
+    expect(
+      findBestCombatGearFromCatalog(character, monster, 'weapon', [
+        aWeapon,
+        zWeapon,
+      ])?.item,
+    ).toBe(aWeapon);
+  });
+
+  it('does not replace a stronger candidate with a lower-code weaker item', () => {
+    const character = buildCharacter({ attack_earth: 1 });
+    const monster = buildMonster({ attack_earth: 20 });
+    const strongWeapon = buildItem({
+      code: 'z_strong_weapon',
+      effects: [{ code: 'attack_earth', description: '', value: 30 }],
+    });
+    const weakWeapon = buildItem({
+      code: 'a_weak_weapon',
+      effects: [{ code: 'attack_earth', description: '', value: 10 }],
+    });
+
+    expect(
+      findBestCombatGearFromCatalog(character, monster, 'weapon', [
+        strongWeapon,
+        weakWeapon,
+      ])?.item,
+    ).toBe(strongWeapon);
+  });
+
+  it('does not score replacements when current equipment is unresolved', () => {
+    const character = buildCharacter({ weapon_slot: 'unknown_weapon' });
+    const candidate = buildItem({
+      code: 'candidate',
+      effects: [{ code: 'attack_earth', description: '', value: 20 }],
+    });
+
+    expect(
+      findBestCombatGearFromCatalog(character, buildMonster(), 'weapon', [
+        candidate,
+      ]),
+    ).toBeUndefined();
+  });
+});
+
 describe('findBestCombatGear', () => {
   describe('weapon slot', () => {
     it("picks the weapon that deals the most damage against the monster's weakest resistance", async () => {
@@ -205,6 +282,33 @@ describe('findBestCombatGear', () => {
 
       expect(getItem).toHaveBeenCalledWith('weak_earth_weapon');
       expect(result._unsafeUnwrap()?.code).toBe('strong_earth_weapon');
+    });
+
+    it('uses the fetched current weapon when it is absent from the candidate page', async () => {
+      const character = buildCharacter({
+        attack_earth: 30,
+        weapon_slot: 'old_weapon',
+      });
+      const currentWeapon = buildItem({
+        code: 'old_weapon',
+        effects: [{ code: 'attack_earth', description: '', value: 10 }],
+      });
+      const newWeapon = buildItem({
+        code: 'new_weapon',
+        effects: [{ code: 'attack_earth', description: '', value: 25 }],
+      });
+      const getItem = vi.fn(() => okAsync({ data: currentWeapon }));
+      const getItems = vi.fn(() => okAsync(buildItemPage([newWeapon])));
+
+      const result = await findBestCombatGear(
+        { getItem, getItems },
+        character,
+        buildMonster(),
+        'weapon',
+        5,
+      );
+
+      expect(result._unsafeUnwrap()).toBe(newWeapon);
     });
 
     it('returns undefined when nothing found deals any damage', async () => {

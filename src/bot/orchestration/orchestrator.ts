@@ -3,6 +3,7 @@ import { err, ok, type Result } from 'neverthrow';
 import { proposeCombatProgressionGoals } from './combatProgressionGoalRule.js';
 import type { CrewSnapshot } from './crewSnapshot.js';
 import type { PreviousActivityOutcome } from './equipmentProgression.js';
+import { proposeEquipmentUpgradeGoals } from './equipmentUpgradeGoalRule.js';
 import {
   createGoalActivityPlanner,
   type GoalActivityPlanner,
@@ -46,6 +47,7 @@ type OrchestratorDependencies = Readonly<{
 const createProgressionGoalPolicy = (config: GoalPolicyConfig): GoalPolicy =>
   createGoalPolicy(config, {
     combatProgression: proposeCombatProgressionGoals,
+    equipmentUpgrade: proposeEquipmentUpgradeGoals,
   });
 
 const acceptProposedGoals = (

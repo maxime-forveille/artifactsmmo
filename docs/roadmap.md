@@ -119,6 +119,8 @@ new orchestration Interface.
 - [x] Keep safety, Reservations, resource protection, and prerequisites outside
       configurable strategy order.
 - [x] Add the first automatically generated finite progression Goal.
+- [x] Propose an obtainable weapon upgrade when no level-appropriate combat is
+      safe.
 - [x] Invoke Goal Policy from the rolling runtime and persist accepted Goals
       before their Activities start.
 - [x] Replace a completed combat Goal from the same observed Snapshot so
@@ -143,7 +145,8 @@ new orchestration Interface.
 - [x] Move monster selection into pure combat planning.
 - [ ] Move resource selection into a pure gathering Goal Rule.
 - [ ] Move profession Goals out of local task-runner Maps.
-- [ ] Move gear-upgrade decisions into orchestration.
+- [ ] Extend the first weapon-only equipment Goal Rule to the remaining combat
+      slots and turn profession Blockers into prerequisite Goals.
 - [ ] Split farming and hunting super-Activities into short gathering/combat
       chunks plus explicit inventory storage.
 - [ ] Replace `autoHunt` and `autoFarm` with automatically generated Goals and

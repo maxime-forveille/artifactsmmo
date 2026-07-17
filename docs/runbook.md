@@ -57,12 +57,14 @@ old character task between cycles, waits for it to stop, then starts the new
 one. Invalid JSON is logged and the last-known-good assignments keep running.
 
 When `policy.goalRuleOrder` is present, every supported rule is required exactly
-once. The runtime currently implements `combatProgression`: it proposes only
-when a safe monster exists, persists the accepted next-level Goal, and then
-starts combat. Other rules currently produce no candidates. Without `policy`,
-only explicit or restored Goals run. Optional one-shot overrides remain a future
-step. Safety, Reservation, prerequisite, and resource-exclusivity invariants
-remain non-configurable.
+once. The runtime currently implements `combatProgression` and the first
+`equipmentUpgrade` slice. Safe combat proposes and persists the next-level Goal.
+When no level-appropriate monster is safe, equipment policy can instead propose
+an obtainable weapon that strictly improves the combat margin against the
+easiest current challenge. Other rules currently produce no candidates. Without
+`policy`, only explicit or restored Goals run. Optional one-shot overrides remain
+a future step. Safety, Reservation, prerequisite, and resource-exclusivity
+invariants remain non-configurable.
 
 ### Durable configured Goals
 

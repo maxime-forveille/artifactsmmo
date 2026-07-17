@@ -142,12 +142,14 @@ current explicit `goals`. Every known rule must appear exactly once:
 ```
 
 When `policy` is present, the runtime invokes Goal Policy before Activity
-planning. The first live rule, `combatProgression`, creates one safe next-level
-Goal per available character and replaces it after the level is observed. Goals
-are persisted before their Activities start. Other named rules are validated but
-produce no candidates until their implementations land; finite one-shot
-overrides remain a later migration step. Omitting `policy` keeps explicit-Goal
-behavior.
+planning. `combatProgression` creates one safe next-level Goal per available
+character and replaces it after the level is observed. If no level-appropriate
+monster is safe, the first `equipmentUpgrade` slice can propose an obtainable,
+equippable weapon that strictly improves combat against the easiest current
+challenge. Goals are persisted before their Activities start. Remaining named
+rules are validated but produce no candidates until their implementations land;
+finite one-shot overrides remain a later migration step. Omitting `policy` keeps
+explicit-Goal behavior.
 
 Configured orchestration persists active Goals in the ignored local file
 `artifactsmmo-crew.sqlite`. On restart it restores those Goals with no active

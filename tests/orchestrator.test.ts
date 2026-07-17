@@ -14,6 +14,7 @@ import type { WorldKnowledge } from '../src/bot/orchestration/worldKnowledge.js'
 import type { components } from '../src/client/schema.js';
 
 type Character = components['schemas']['CharacterSchema'];
+type Item = components['schemas']['ItemSchema'];
 type Monster = components['schemas']['MonsterSchema'];
 type Resource = components['schemas']['ResourceSchema'];
 
@@ -36,7 +37,7 @@ const buildCharacter = (name: string, level: number): Character => ({
   res_water: 0,
 });
 
-const buildMonster = (): Monster => ({
+const buildMonster = (overrides: Partial<Monster> = {}): Monster => ({
   ...({} as Monster),
   attack_air: 0,
   attack_earth: 1,
@@ -51,6 +52,16 @@ const buildMonster = (): Monster => ({
   res_earth: 0,
   res_fire: 0,
   res_water: 0,
+  ...overrides,
+});
+
+const buildWeapon = (): Item => ({
+  ...({} as Item),
+  code: 'copper_dagger',
+  effects: [{ code: 'attack_earth', description: '', value: 20 }],
+  level: 5,
+  name: 'Copper Dagger',
+  type: 'weapon',
 });
 
 const buildResource = (): Resource => ({
@@ -61,8 +72,11 @@ const buildResource = (): Resource => ({
   skill: 'mining',
 });
 
-const buildSnapshot = (characters: readonly Character[]): CrewSnapshot => ({
-  bank: [],
+const buildSnapshot = (
+  characters: readonly Character[],
+  bank: CrewSnapshot['bank'] = [],
+): CrewSnapshot => ({
+  bank,
   capturedAt: '2026-07-17T08:00:00.000Z',
   characters,
 });
@@ -78,6 +92,9 @@ const buildWorld = (
 
 const emptyState = (): OrchestratorState => ({ goals: [], reservations: [] });
 const combatPolicy = { goalRuleOrder: ['combatProgression'] as const };
+const equipmentFirstPolicy = {
+  goalRuleOrder: ['equipmentUpgrade', 'combatProgression'] as const,
+};
 
 const combatGoal = (characterName: string, targetLevel: number) => ({
   characterName,
@@ -163,6 +180,58 @@ describe('createOrchestrator', () => {
             rule: 'combatProgression',
             targetLevel: 7,
             type: 'reachCombatLevel',
+          },
+        ],
+        reservations: [],
+      },
+    });
+  });
+
+  it('proposes an obtainable weapon upgrade when combat is not safe', () => {
+    const weapon = buildWeapon();
+    const unsafeMonster = buildMonster({
+      attack_earth: 100,
+      hp: 100,
+      level: 1,
+    });
+    const orchestrate = createOrchestrator(
+      buildWorld({ items: [weapon], monsters: [unsafeMonster] }),
+      equipmentFirstPolicy,
+    );
+
+    const result = orchestrate(
+      buildSnapshot(
+        [buildCharacter('Stan', 5)],
+        [{ code: weapon.code, quantity: 1 }],
+      ),
+      emptyState(),
+    );
+
+    expect(result._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: {
+            itemCode: 'copper_dagger',
+            quantity: 1,
+            type: 'withdrawItem',
+          },
+          characterName: 'Stan',
+          consumes: [{ itemCode: 'copper_dagger', quantity: 1 }],
+          goalId: 'equipItem:Stan:copper_dagger',
+          produces: [],
+        },
+      ],
+      state: {
+        goals: [
+          {
+            characterName: 'Stan',
+            id: 'equipItem:Stan:copper_dagger',
+            itemCode: 'copper_dagger',
+            origin: 'autonomous',
+            reason:
+              'Stan needs copper_dagger to improve combat against yellow_slime',
+            rule: 'equipmentUpgrade',
+            type: 'equipItem',
           },
         ],
         reservations: [],

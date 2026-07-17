@@ -297,8 +297,15 @@ completes the Goal when the target level is observed, waits for authoritative
 Reservations, or selects the highest-level safe monster at or below the
 character level. Safety is evaluated at post-rest HP and monster code breaks
 equal-level ties deterministically. No safe target is a typed planning error for
-a future equipment-prerequisite rule. Until combat Activities are shortened, the
-selected `fightMonster` Activity still uses the transitional full hunting cycle.
+an equipment prerequisite. Until combat Activities are shortened, the selected
+`fightMonster` Activity still uses the transitional full hunting cycle.
+
+`orchestration/equipmentUpgradeGoalRule.ts` implements the first autonomous
+equipment slice. When a character has no safe level-appropriate monster, it
+scores obtainable, equippable weapons against the easiest current combat
+challenge and proposes one finite `equipItem` Goal only for a strict combat-margin
+improvement. Obtainable currently means craftable or already held or banked.
+Other equipment slots and profession prerequisites remain later slices.
 
 `orchestration/equipmentProgression.ts` advances an explicit character equipment
 Goal through one recursive recipe step at a time. It retrieves banked inputs,

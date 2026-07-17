@@ -253,6 +253,49 @@ export const findCombatGearUpgrades = (
  * (`wisdom`, `prospecting`, `haste`, ...) aren't weighed at all, a documented
  * simplification like `isSafeToFight`'s ignored initiative.
  */
+export type CombatGearSelection = Readonly<{ item: Item; margin: number }>;
+
+/** Ranks one already-filtered slot catalogue without performing API reads. */
+export const findBestCombatGearFromCatalog = (
+  character: Character,
+  monster: Monster,
+  slot: SupportedCombatSlot,
+  items: readonly Item[],
+): CombatGearSelection | undefined => {
+  const currentItemCode = equippedItemInSlot(character, slot);
+  const currentItem = items.find((item) => item.code === currentItemCode);
+
+  if (currentItemCode !== undefined && currentItem === undefined) {
+    return undefined;
+  }
+
+  const baseStats = withContribution(
+    character,
+    currentItem === undefined ? {} : gearContribution(currentItem),
+    -1,
+  );
+
+  return items
+    .map((candidate) => ({
+      item: candidate,
+      margin: combatMargin(
+        withContribution(baseStats, gearContribution(candidate), 1),
+        monster,
+      ),
+    }))
+    .reduce<CombatGearSelection | undefined>(
+      (best, candidate) =>
+        candidate.margin > 0 &&
+        (best === undefined ||
+          candidate.margin > best.margin ||
+          (candidate.margin === best.margin &&
+            candidate.item.code.localeCompare(best.item.code) < 0))
+          ? candidate
+          : best,
+      undefined,
+    );
+};
+
 export const findBestCombatGear = (
   client: CombatGearClient,
   character: Character,
@@ -267,38 +310,19 @@ export const findBestCombatGear = (
       ? okAsync(undefined)
       : client.getItem(currentItemCode).map((response) => response.data);
 
-  return currentItem$.andThen((currentItem) => {
-    const baseStats = withContribution(
-      character,
-      currentItem === undefined ? {} : gearContribution(currentItem),
-      -1,
-    );
-
-    return client
+  return currentItem$.andThen((currentItem) =>
+    client
       .getItems({
         max_level: maxLevel,
         size: 100,
         type: ITEM_TYPE_BY_EQUIP_SLOT[slot],
       })
       .map((page) => {
-        const ranked = page.data.map((candidate) => ({
-          item: candidate,
-          margin: combatMargin(
-            withContribution(baseStats, gearContribution(candidate), 1),
-            monster,
-          ),
-        }));
+        const items =
+          currentItem === undefined ? page.data : [...page.data, currentItem];
 
-        return ranked.reduce<
-          { readonly item: Item; readonly margin: number } | undefined
-        >(
-          (best, candidate) =>
-            candidate.margin > 0 &&
-            (best === undefined || candidate.margin > best.margin)
-              ? candidate
-              : best,
-          undefined,
-        )?.item;
-      });
-  });
+        return findBestCombatGearFromCatalog(character, monster, slot, items)
+          ?.item;
+      }),
+  );
 };
