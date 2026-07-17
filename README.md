@@ -111,7 +111,9 @@ requires `id`, `itemCode`, `minimumBankQuantity`, and `resourceCode`. An
 ```
 
 At startup, active Goals resolve against one shared `WorldKnowledge` catalogue
-of items, monsters, and resources. The equipment Goal resolves its recipe tree,
+of items, monsters, and resources. A combat-level Goal selects the highest-level
+safe monster for its character until the target level is observed. The equipment
+Goal resolves its recipe tree,
 retrieves banked inputs, crafts intermediates, then crafts and equips the target.
 When a missing raw material has exactly one resource or monster source, an
 eligible crew member acquires it. Eligible characters can craft intermediate or
@@ -139,9 +141,10 @@ current explicit `goals`. Every known rule must appear exactly once:
 }
 ```
 
-The current runtime validates this policy but still executes only explicit
-Goals. Autonomous Goal generation and optional finite one-shot overrides are
-later migration steps.
+The current runtime validates this policy and can resume persisted autonomous
+Goals, but it does not yet invoke Goal Policy to generate new ones. Autonomous
+Goal generation and optional finite one-shot overrides are later migration
+steps.
 
 Configured orchestration persists active Goals in the ignored local file
 `artifactsmmo-crew.sqlite`. On restart it restores those Goals with no active

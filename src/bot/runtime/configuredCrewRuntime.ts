@@ -6,9 +6,9 @@ import {
   type OrchestrationConfig,
 } from '../../utils/orchestrationConfig.js';
 import {
-  createConfiguredGoalPlanner,
-  type ConfiguredGoalPlannerError,
-} from '../orchestration/configuredGoalPlanner.js';
+  createGoalActivityPlanner,
+  type GoalActivityPlannerError,
+} from '../orchestration/goalActivityPlanner.js';
 import {
   durableStateFrom,
   type OrchestratorStateRepository,
@@ -50,7 +50,7 @@ export const createConfiguredCrewRuntime = <ERepository extends Error>(
   options: ConfiguredCrewRuntimeOptions<ERepository>,
 ): ResultAsync<
   RollingActivityCoordinator<
-    ConfiguredGoalPlannerError | ERepository,
+    GoalActivityPlannerError | ERepository,
     CrewRuntimeStartError,
     ArtifactsApiError
   >,
@@ -69,16 +69,15 @@ export const createConfiguredCrewRuntime = <ERepository extends Error>(
 
   return readPlanningKnowledge(client, initialState.goals.length > 0).andThen(
     (worldKnowledge) => {
-      const planConfiguredGoals = createConfiguredGoalPlanner(worldKnowledge);
+      const planGoalActivities = createGoalActivityPlanner(worldKnowledge);
 
       return createCrewRuntime(client, {
         initialState,
         plan: (snapshot, state, previousOutcome) =>
-          planConfiguredGoals(snapshot, state, previousOutcome).andThen(
-            (plan) =>
-              options.stateRepository
-                .save(durableStateFrom(plan.state))
-                .map(() => plan),
+          planGoalActivities(snapshot, state, previousOutcome).andThen((plan) =>
+            options.stateRepository
+              .save(durableStateFrom(plan.state))
+              .map(() => plan),
           ),
         reportError: options.reportError,
         waitBeforeRetry: options.waitBeforeRetry,

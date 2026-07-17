@@ -15,13 +15,14 @@ type Resource = components['schemas']['ResourceSchema'];
 
 class TestRepositoryError extends Error {}
 
-const buildCharacter = (): Character => ({
+const buildCharacter = (overrides: Partial<Character> = {}): Character => ({
   ...({} as Character),
   inventory: [],
   level: 5,
   mining_level: 5,
   name: 'Stan',
   weapon_slot: 'copper_dagger',
+  ...overrides,
 });
 
 const buildItem = (code: string): Item => ({
@@ -231,6 +232,36 @@ describe('createConfiguredCrewRuntime', () => {
     expect(runtime.start().isOk()).toBe(true);
     expect(runtime.getState()).toEqual({ goals: [], reservations: [] });
     expect(getResources).toHaveBeenCalledOnce();
+    expect(stateRepository.load()._unsafeUnwrap()).toEqual({ goals: [] });
+  });
+
+  it('restores and completes an autonomous combat Goal absent from configuration', async () => {
+    const { client, getMonsters } = buildClient();
+    const stateRepository = createInMemoryOrchestratorStateRepository({
+      goals: [
+        {
+          characterName: 'Stan',
+          id: 'reachCombatLevel:Stan:5',
+          origin: 'autonomous',
+          reason: 'Progress Stan to the next combat frontier',
+          rule: 'combatProgression',
+          targetLevel: 5,
+          type: 'reachCombatLevel',
+        },
+      ],
+    });
+
+    const result = await createConfiguredCrewRuntime(client, {
+      config: { goals: [] },
+      reportError: vi.fn(),
+      stateRepository,
+      waitBeforeRetry: vi.fn(async () => undefined),
+    });
+    const runtime = result._unsafeUnwrap();
+
+    expect(runtime.start().isOk()).toBe(true);
+    expect(runtime.getState()).toEqual({ goals: [], reservations: [] });
+    expect(getMonsters).toHaveBeenCalledOnce();
     expect(stateRepository.load()._unsafeUnwrap()).toEqual({ goals: [] });
   });
 

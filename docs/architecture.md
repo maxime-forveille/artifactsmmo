@@ -309,10 +309,10 @@ flight, busy holders, and busy crafters also cause the Goal to wait.
 Profession-level Blockers remain for a later planner layer to turn into
 profession progression work.
 
-`orchestration/configuredGoalPlanner.ts` applies both transitions in global
-priority order. Proposals act as temporary Reservations during the same
-decision, allowing independent targets to use different idle characters without
-duplicating in-flight work. It resolves item, recipe, material-source, and
+`orchestration/goalActivityPlanner.ts` applies combat, equipment, and resource
+transitions in global priority order. Proposals act as temporary Reservations
+during the same decision, allowing independent targets to use different idle
+characters without duplicating in-flight work. It resolves item, recipe, material-source, and
 resource needs by domain code from shared `WorldKnowledge`, never by a mapping
 to configuration-specific Goal IDs. Exact targets remain explicit until
 automatic target selection is designed.
@@ -426,13 +426,13 @@ is persisted before newly selected Activities launch. The database is closed
 when the runtime becomes idle or startup fails. Character and bank state remain
 authoritative in the Artifacts API.
 
-Restored equipment and bank-replenishment Goals resolve their targets from
-Goal-independent `WorldKnowledge`. A configured bank Goal preserves its selected
-`resourceCode`; older or autonomous Goals without one may proceed only when
-exactly one world resource produces the target item. Ambiguous sources remain a
-typed planning failure rather than triggering an arbitrary irreversible choice.
-Other persisted Goal types become fully restart-safe as their Activity planners
-are wired into the live runtime.
+Every current Goal variant is restart-safe in the live runtime. Restored combat
+Goals select targets from `WorldKnowledge`; equipment and bank-replenishment
+Goals resolve their catalog needs from the same Goal-independent input. A
+configured bank Goal preserves its selected `resourceCode`; older or autonomous
+Goals without one may proceed only when exactly one world resource produces the
+target item. Ambiguous sources remain a typed planning failure rather than
+triggering an arbitrary irreversible choice.
 
 A separate cache Adapter may share the database after durable state is proven.
 It will persist static world knowledge, rate-limit windows, and observations

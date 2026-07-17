@@ -2,6 +2,10 @@ import { err, ok, type Result } from 'neverthrow';
 
 import type { components } from '../../client/schema.js';
 
+import {
+  planCombatProgression,
+  type CombatProgressionError,
+} from './combatProgression.js';
 import type { CrewSnapshot } from './crewSnapshot.js';
 import {
   planEquipmentProgression,
@@ -24,7 +28,7 @@ import type { WorldKnowledge } from './worldKnowledge.js';
 
 type Item = Readonly<components['schemas']['ItemSchema']>;
 
-type ConfiguredGoalPlan = Readonly<{
+type GoalActivityPlan = Readonly<{
   activities: readonly ActivityAssignment[];
   state: OrchestratorState;
 }>;
@@ -48,17 +52,18 @@ export class GoalResourceNotResolvedError extends Error {
   }
 }
 
-export type ConfiguredGoalPlannerError =
+export type GoalActivityPlannerError =
+  | CombatProgressionError
   | EquipmentProgressionError
   | GoalItemNotResolvedError
   | GoalResourceNotResolvedError
   | ResourceReplenishmentError;
 
-export type ConfiguredGoalPlanner = (
+export type GoalActivityPlanner = (
   snapshot: CrewSnapshot,
   state: OrchestratorState,
   previousOutcome?: PreviousActivityOutcome,
-) => Result<ConfiguredGoalPlan, ConfiguredGoalPlannerError>;
+) => Result<GoalActivityPlan, GoalActivityPlannerError>;
 
 const bankQuantity = (snapshot: CrewSnapshot, itemCode: string): number =>
   snapshot.bank
@@ -214,9 +219,9 @@ export const resolveEquipmentKnowledge = (
  * Proposed assignments act as temporary Reservations while the same decision
  * examines later Goals.
  */
-export const createConfiguredGoalPlanner = (
+export const createGoalActivityPlanner = (
   knowledge: WorldKnowledge,
-): ConfiguredGoalPlanner => {
+): GoalActivityPlanner => {
   const itemsByCode = new Map(
     knowledge.items.map((item) => [item.code, item] as const),
   );
@@ -232,39 +237,41 @@ export const createConfiguredGoalPlanner = (
         reservations: planningReservations,
       };
       const planned =
-        goal.type === 'equipItem'
-          ? (() => {
-              const item = itemsByCode.get(goal.itemCode);
-              if (item === undefined) {
-                return err(new GoalItemNotResolvedError(goal.id));
-              }
-
-              const equipmentKnowledge = resolveEquipmentKnowledge(
-                knowledge,
-                item,
-              );
-              return planEquipmentProgression(
-                snapshot,
-                planningState,
-                item,
-                previousOutcome,
-                equipmentKnowledge.sources,
-                equipmentKnowledge.items,
-              );
-            })()
-          : goal.type === 'replenishBankItem'
+        goal.type === 'reachCombatLevel'
+          ? planCombatProgression(snapshot, planningState, knowledge)
+          : goal.type === 'equipItem'
             ? (() => {
-                const resource = resolveResource(knowledge, goal);
-                return resource === undefined
-                  ? err(new GoalResourceNotResolvedError(goal.id))
-                  : planResourceReplenishment(
-                      snapshot,
-                      planningState,
-                      resource,
-                      state.reservations,
-                    );
+                const item = itemsByCode.get(goal.itemCode);
+                if (item === undefined) {
+                  return err(new GoalItemNotResolvedError(goal.id));
+                }
+
+                const equipmentKnowledge = resolveEquipmentKnowledge(
+                  knowledge,
+                  item,
+                );
+                return planEquipmentProgression(
+                  snapshot,
+                  planningState,
+                  item,
+                  previousOutcome,
+                  equipmentKnowledge.sources,
+                  equipmentKnowledge.items,
+                );
               })()
-            : ok({ activities: [], state: planningState });
+            : goal.type === 'replenishBankItem'
+              ? (() => {
+                  const resource = resolveResource(knowledge, goal);
+                  return resource === undefined
+                    ? err(new GoalResourceNotResolvedError(goal.id))
+                    : planResourceReplenishment(
+                        snapshot,
+                        planningState,
+                        resource,
+                        state.reservations,
+                      );
+                })()
+              : ok({ activities: [], state: planningState });
 
       if (planned.isErr()) {
         return err(planned.error);

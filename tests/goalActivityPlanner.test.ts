@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
+import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
 import {
-  createConfiguredGoalPlanner,
+  createGoalActivityPlanner,
   GoalItemNotResolvedError,
   GoalResourceNotResolvedError,
   resolveEquipmentKnowledge,
-} from '../src/bot/orchestration/configuredGoalPlanner.js';
-import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
+} from '../src/bot/orchestration/goalActivityPlanner.js';
 import type {
   ActiveGoal,
   EquipItemGoal,
   OrchestratorState,
+  ReachCombatLevelGoal,
   ReplenishBankItemGoal,
 } from '../src/bot/orchestration/orchestratorState.js';
 import {
@@ -63,6 +64,18 @@ const buildEquipmentGoal = (): ActiveGoal & EquipItemGoal => ({
   itemCode: 'copper_dagger',
   origin: 'configured',
   type: 'equipItem',
+});
+
+const buildCombatGoal = (
+  targetLevel = 11,
+): ActiveGoal & ReachCombatLevelGoal => ({
+  characterName: 'Stan',
+  id: `reachCombatLevel:Stan:${targetLevel}`,
+  origin: 'autonomous',
+  reason: `Progress Stan to combat level ${targetLevel}`,
+  rule: 'combatProgression',
+  targetLevel,
+  type: 'reachCombatLevel',
 });
 
 const buildItem = (): Item => ({
@@ -131,11 +144,11 @@ const buildKnowledge = (
 ): WorldKnowledge => ({ items: [], monsters: [], resources: [], ...overrides });
 
 const buildPlanner = () =>
-  createConfiguredGoalPlanner(
+  createGoalActivityPlanner(
     buildKnowledge({ resources: [copperResource, ashResource] }),
   );
 
-describe('createConfiguredGoalPlanner', () => {
+describe('createGoalActivityPlanner', () => {
   it('uses the resource resolved for the highest-priority Goal', () => {
     const result = buildPlanner()(buildSnapshot(), buildState());
 
@@ -199,10 +212,69 @@ describe('createConfiguredGoalPlanner', () => {
     });
   });
 
+  it('plans combat before lower-priority resource work on another character', () => {
+    const combatGoal = buildCombatGoal();
+    const state = buildState([combatGoal, copperGoal]);
+    const planner = createGoalActivityPlanner(
+      buildKnowledge({
+        monsters: [buildMonster('yellow_slimeball')],
+        resources: [copperResource],
+      }),
+    );
+    const snapshot = {
+      ...buildSnapshot(),
+      characters: [buildCharacter('Stan'), buildCharacter('Cartman')],
+    };
+
+    expect(planner(snapshot, state)._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: { monsterCode: 'yellow_slime', type: 'fightMonster' },
+          characterName: 'Stan',
+          consumes: [],
+          goalId: combatGoal.id,
+          produces: [],
+        },
+        {
+          activity: { resourceCode: 'copper_rocks', type: 'farmResource' },
+          characterName: 'Cartman',
+          consumes: [],
+          goalId: copperGoal.id,
+          produces: [{ itemCode: 'copper_ore' }],
+        },
+      ],
+      state,
+    });
+  });
+
+  it('completes a combat Goal and plans the next Goal from the same snapshot', () => {
+    const combatGoal = buildCombatGoal(10);
+    const state = buildState([combatGoal, copperGoal]);
+    const planner = createGoalActivityPlanner(
+      buildKnowledge({
+        monsters: [buildMonster('yellow_slimeball')],
+        resources: [copperResource],
+      }),
+    );
+
+    expect(planner(buildSnapshot(), state)._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: { resourceCode: 'copper_rocks', type: 'farmResource' },
+          characterName: 'Stan',
+          consumes: [],
+          goalId: copperGoal.id,
+          produces: [{ itemCode: 'copper_ore' }],
+        },
+      ],
+      state: { goals: [copperGoal], reservations: [] },
+    });
+  });
+
   it('preserves global priority across equipment and resource Goals', () => {
     const equipmentGoal = buildEquipmentGoal();
     const state = buildState([equipmentGoal, copperGoal]);
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({ items: [buildItem()], resources: [copperResource] }),
     );
     const snapshot = {
@@ -257,7 +329,7 @@ describe('createConfiguredGoalPlanner', () => {
     };
     const sword = { ...dagger, code: 'copper_sword' };
     const state = buildState([stanGoal, kyleGoal]);
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({ items: [dagger, sword] }),
     );
     const snapshot = {
@@ -302,7 +374,7 @@ describe('createConfiguredGoalPlanner', () => {
     };
     const barResource = buildResource('copper_rocks', 'copper_bar', 'mining');
     const state = buildState([equipmentGoal, replenishGoal]);
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({ items: [item], resources: [barResource] }),
     );
     const snapshot = {
@@ -354,7 +426,7 @@ describe('createConfiguredGoalPlanner', () => {
     };
     const barResource = buildResource('copper_rocks', 'copper_bar', 'mining');
     const state = buildState([replenishGoal, equipmentGoal]);
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({ items: [item], resources: [barResource] }),
     );
     const snapshot = {
@@ -411,7 +483,7 @@ describe('createConfiguredGoalPlanner', () => {
       },
     };
     const state = buildState([equipmentGoal, copperGoal]);
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({
         items: [item, buildRawItem('ash_wood')],
         resources: [copperResource],
@@ -444,7 +516,7 @@ describe('createConfiguredGoalPlanner', () => {
     };
     const item = { ...buildItem(), code: 'copper_ore' };
     const state = buildState([equipmentGoal, copperGoal]);
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({ items: [item], resources: [copperResource] }),
     );
     const snapshot = {
@@ -486,7 +558,7 @@ describe('createConfiguredGoalPlanner', () => {
       },
     };
     const copperOre = { ...({} as Item), code: 'copper_ore' };
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({
         items: [item, copperBar, copperOre],
         resources: [copperResource],
@@ -521,7 +593,7 @@ describe('createConfiguredGoalPlanner', () => {
         skill: 'weaponcrafting' as const,
       },
     };
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({
         items: [item, buildRawItem('yellow_slimeball')],
         monsters: [buildMonster('yellow_slimeball')],
@@ -586,7 +658,7 @@ describe('createConfiguredGoalPlanner', () => {
   it('continues lower-priority work after an equipment Activity is blocked', () => {
     const equipmentGoal = buildEquipmentGoal();
     const state = buildState([equipmentGoal, copperGoal]);
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({ items: [buildItem()], resources: [copperResource] }),
     );
     const snapshot = {
@@ -672,7 +744,7 @@ describe('createConfiguredGoalPlanner', () => {
   });
 
   it('propagates a resource validation failure', () => {
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({ resources: [ashResource] }),
     );
     const invalidGoal = { ...copperGoal, resourceCode: ashResource.code };
@@ -687,7 +759,7 @@ describe('createConfiguredGoalPlanner', () => {
 
   it('returns a typed error when an equipment Goal has no resolved item', () => {
     const equipmentGoal = buildEquipmentGoal();
-    const planner = createConfiguredGoalPlanner(buildKnowledge());
+    const planner = createGoalActivityPlanner(buildKnowledge());
 
     const result = planner(buildSnapshot(), buildState([equipmentGoal]));
 
@@ -707,7 +779,7 @@ describe('createConfiguredGoalPlanner', () => {
       'mining',
     );
     const goal = { ...copperGoal, resourceCode: richCopperResource.code };
-    const planner = createConfiguredGoalPlanner(
+    const planner = createGoalActivityPlanner(
       buildKnowledge({ resources: [copperResource, richCopperResource] }),
     );
 
@@ -729,7 +801,7 @@ describe('createConfiguredGoalPlanner', () => {
       ],
     ],
   ])('returns a typed error when %s', (_reason, resources) => {
-    const planner = createConfiguredGoalPlanner(buildKnowledge({ resources }));
+    const planner = createGoalActivityPlanner(buildKnowledge({ resources }));
 
     const result = planner(buildSnapshot(), buildState([copperGoal]));
 
