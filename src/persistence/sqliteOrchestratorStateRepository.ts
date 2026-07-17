@@ -22,6 +22,15 @@ export class SqliteOrchestratorStateRepositoryError extends Error {
   }
 }
 
+const craftSkillSchema = v.picklist([
+  'alchemy',
+  'cooking',
+  'gearcrafting',
+  'jewelrycrafting',
+  'mining',
+  'weaponcrafting',
+  'woodcutting',
+]);
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 
@@ -37,6 +46,13 @@ const goalSchema = v.variant('type', [
     id: nonEmptyStringSchema,
     targetLevel: positiveIntegerSchema,
     type: v.literal('reachCombatLevel'),
+  }),
+  v.object({
+    characterName: nonEmptyStringSchema,
+    id: nonEmptyStringSchema,
+    skill: craftSkillSchema,
+    targetLevel: positiveIntegerSchema,
+    type: v.literal('reachProfessionLevel'),
   }),
   v.object({
     id: nonEmptyStringSchema,
@@ -77,7 +93,12 @@ const persistedGoalRowsSchema = v.array(
     parentGoalId: v.nullable(v.string()),
     reason: v.nullable(v.string()),
     rule: v.nullable(v.picklist(GOAL_RULE_NAMES)),
-    type: v.picklist(['equipItem', 'reachCombatLevel', 'replenishBankItem']),
+    type: v.picklist([
+      'equipItem',
+      'reachCombatLevel',
+      'reachProfessionLevel',
+      'replenishBankItem',
+    ]),
   }),
 );
 

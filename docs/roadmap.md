@@ -127,6 +127,8 @@ new orchestration Interface.
       autonomous progression does not become idle between levels.
 - [x] Preserve a blocked parent Goal while inserting its prerequisite Goal ahead
       of it.
+- [x] Convert crafting-level Blockers into durable `reachProfessionLevel`
+      prerequisites and reconcile their observed completion.
 
 ### 5. Configurable strategy
 
@@ -144,9 +146,10 @@ new orchestration Interface.
 
 - [x] Move monster selection into pure combat planning.
 - [ ] Move resource selection into a pure gathering Goal Rule.
-- [ ] Move profession Goals out of local task-runner Maps.
+- [ ] Plan bounded profession-XP crafts for durable profession Goals, then remove
+      equivalent profession decisions from local task-runner Maps.
 - [ ] Extend the first weapon-only equipment Goal Rule to the remaining combat
-      slots and turn profession Blockers into prerequisite Goals.
+      slots.
 - [ ] Split farming and hunting super-Activities into short gathering/combat
       chunks plus explicit inventory storage.
 - [ ] Replace `autoHunt` and `autoFarm` with automatically generated Goals and

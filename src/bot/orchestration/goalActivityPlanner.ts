@@ -18,6 +18,10 @@ import type {
   OrchestratorState,
   ReplenishBankItemGoal,
 } from './orchestratorState.js';
+import {
+  planProfessionProgression,
+  type ProfessionCharacterNotFoundError,
+} from './professionProgression.js';
 import { reservedBankWithdrawalQuantity } from './reservationIntents.js';
 import {
   planResourceReplenishment,
@@ -57,6 +61,7 @@ export type GoalActivityPlannerError =
   | EquipmentProgressionError
   | GoalItemNotResolvedError
   | GoalResourceNotResolvedError
+  | ProfessionCharacterNotFoundError
   | ResourceReplenishmentError;
 
 export type GoalActivityPlanner = (
@@ -259,19 +264,21 @@ export const createGoalActivityPlanner = (
                   equipmentKnowledge.items,
                 );
               })()
-            : goal.type === 'replenishBankItem'
-              ? (() => {
-                  const resource = resolveResource(knowledge, goal);
-                  return resource === undefined
-                    ? err(new GoalResourceNotResolvedError(goal.id))
-                    : planResourceReplenishment(
-                        snapshot,
-                        planningState,
-                        resource,
-                        state.reservations,
-                      );
-                })()
-              : ok({ activities: [], state: planningState });
+            : goal.type === 'reachProfessionLevel'
+              ? planProfessionProgression(snapshot, planningState)
+              : goal.type === 'replenishBankItem'
+                ? (() => {
+                    const resource = resolveResource(knowledge, goal);
+                    return resource === undefined
+                      ? err(new GoalResourceNotResolvedError(goal.id))
+                      : planResourceReplenishment(
+                          snapshot,
+                          planningState,
+                          resource,
+                          state.reservations,
+                        );
+                  })()
+                : ok({ activities: [], state: planningState });
 
       if (planned.isErr()) {
         return err(planned.error);

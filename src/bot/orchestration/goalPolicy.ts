@@ -81,6 +81,9 @@ const conflictKeyForGoal = (goal: Goal): string => {
     case 'reachCombatLevel': {
       return `${goal.type}:${goal.characterName}:${goal.targetLevel}`;
     }
+    case 'reachProfessionLevel': {
+      return `${goal.type}:${goal.characterName}:${goal.skill}:${goal.targetLevel}`;
+    }
     case 'replenishBankItem': {
       return `${goal.type}:${goal.itemCode}`;
     }

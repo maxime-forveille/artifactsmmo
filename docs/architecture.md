@@ -257,8 +257,10 @@ Priority tiers are:
 3. autonomous Goal Proposals ranked by configured Goal Rule order.
 
 The policy expands prerequisite cascades one observed layer at a time rather
-than speculating a complete tree. A blocked equipment Goal can propose a finite
-profession-level Goal; that Goal can later propose a resource Goal. Completing a
+than speculating a complete tree. An `InsufficientCraftingLevelError` Blocker
+creates a finite `reachProfessionLevel` prerequisite immediately before its
+preserved equipment parent, outside configurable autonomous rule order. That
+profession Goal can later propose craft and resource work. Completing a
 prerequisite resumes its preserved parent Goal. Stable semantic IDs prevent the
 same Goal from being proposed twice and persistent Goals prevent policy from
 oscillating on every snapshot.
@@ -319,10 +321,11 @@ by in-flight withdrawals from observed bank stock. Replenishment waits for
 active withdrawals to settle, while withdrawals proposed in the current pure
 decision can trigger parallel replenishment. Matching production already in
 flight, busy holders, and busy crafters also cause the Goal to wait.
-Profession-level Blockers remain for a later planner layer to turn into
-profession progression work.
+Crafting-level Blockers become durable profession prerequisites. The first
+`professionProgression` planner slice reconciles completion from the observed
+profession level; selecting and executing XP crafts remains the next slice.
 
-`orchestration/goalActivityPlanner.ts` applies combat, equipment, and resource
+`orchestration/goalActivityPlanner.ts` applies combat, equipment, profession, and resource
 transitions in global priority order. Proposals act as temporary Reservations
 during the same decision, allowing independent targets to use different idle
 characters without duplicating in-flight work. It resolves item, recipe, material-source, and

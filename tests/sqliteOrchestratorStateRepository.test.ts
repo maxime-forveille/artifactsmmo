@@ -55,6 +55,18 @@ const prerequisiteGoal: ActiveGoal = {
   type: 'replenishBankItem',
 };
 
+const professionGoal: ActiveGoal = {
+  characterName: 'Stan',
+  id: 'reachProfessionLevel:Stan:gearcrafting:5',
+  origin: 'prerequisite',
+  parentGoalId: configuredGoal.id,
+  reason: 'Reach gearcrafting level 5 for the parent Goal',
+  rule: 'professionProgression',
+  skill: 'gearcrafting',
+  targetLevel: 5,
+  type: 'reachProfessionLevel',
+};
+
 const autonomousGoal: ActiveGoal = {
   characterName: 'Kyle',
   id: 'reachCombatLevel:Kyle:8',
@@ -74,7 +86,13 @@ const overrideGoal: ActiveGoal = {
 };
 
 const buildState = (): DurableOrchestratorState => ({
-  goals: [prerequisiteGoal, configuredGoal, autonomousGoal, overrideGoal],
+  goals: [
+    professionGoal,
+    prerequisiteGoal,
+    configuredGoal,
+    autonomousGoal,
+    overrideGoal,
+  ],
 });
 
 afterEach(() => {
@@ -103,6 +121,30 @@ describe('createSqliteOrchestratorStateRepository', () => {
     const state = buildState();
 
     expect(repository.save(state).isOk()).toBe(true);
+
+    expect(repository.load()._unsafeUnwrap()).toEqual(state);
+  });
+
+  it.each([
+    'alchemy',
+    'cooking',
+    'gearcrafting',
+    'jewelrycrafting',
+    'mining',
+    'weaponcrafting',
+    'woodcutting',
+  ] as const)('persists the %s profession Goal skill', (skill) => {
+    const repository = createSqliteOrchestratorStateRepository(
+      openMigratedDatabase(),
+    );
+    const goal: ActiveGoal = {
+      ...professionGoal,
+      id: `reachProfessionLevel:Stan:${skill}:5`,
+      skill,
+    };
+    const state = { goals: [goal, configuredGoal] };
+
+    repository.save(state)._unsafeUnwrap();
 
     expect(repository.load()._unsafeUnwrap()).toEqual(state);
   });

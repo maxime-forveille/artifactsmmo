@@ -1,6 +1,7 @@
 import { err, ok } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
 
+import { InsufficientCraftingLevelError } from '../src/bot/activities/crafting.js';
 import type { CrewSnapshot } from '../src/bot/orchestration/crewSnapshot.js';
 import { GoalItemNotResolvedError } from '../src/bot/orchestration/goalActivityPlanner.js';
 import type { GoalProposal } from '../src/bot/orchestration/goalPolicy.js';
@@ -134,6 +135,99 @@ describe('createOrchestrator', () => {
         state,
       )._unsafeUnwrap(),
     ).toEqual({ activities: [], state });
+  });
+
+  it('inserts a crafting-level prerequisite before its blocked parent Goal', () => {
+    const parentGoal: ActiveGoal = {
+      characterName: 'Stan',
+      id: 'equipItem:Stan:copper_dagger',
+      itemCode: 'copper_dagger',
+      origin: 'autonomous',
+      reason: 'Improve Stan combat equipment',
+      rule: 'equipmentUpgrade',
+      type: 'equipItem',
+    };
+    const state: OrchestratorState = { goals: [parentGoal], reservations: [] };
+    const orchestrate = createOrchestrator(
+      buildWorld({ items: [buildWeapon()] }),
+    );
+    const blocker = new InsufficientCraftingLevelError(
+      'copper_dagger',
+      'weaponcrafting',
+      5,
+      3,
+    );
+
+    const result = orchestrate(
+      buildSnapshot([
+        { ...buildCharacter('Stan', 5), weaponcrafting_level: 3 },
+      ]),
+      state,
+      {
+        error: blocker,
+        event: {
+          characterName: 'Stan',
+          goalId: parentGoal.id,
+          type: 'blocked',
+        },
+      },
+    );
+
+    expect(result._unsafeUnwrap()).toEqual({
+      activities: [],
+      state: {
+        goals: [
+          {
+            characterName: 'Stan',
+            id: 'reachProfessionLevel:Stan:weaponcrafting:5',
+            origin: 'prerequisite',
+            parentGoalId: parentGoal.id,
+            reason:
+              'Stan needs weaponcrafting level 5 to craft copper_dagger; current level is 3',
+            rule: 'professionProgression',
+            skill: 'weaponcrafting',
+            targetLevel: 5,
+            type: 'reachProfessionLevel',
+          },
+          parentGoal,
+        ],
+        reservations: [],
+      },
+    });
+  });
+
+  it('rejects a profession prerequisite whose blocked parent is absent', () => {
+    const planGoalActivities = vi.fn();
+    const orchestrate = createOrchestrator(buildWorld(), undefined, {
+      planGoalActivities,
+    });
+    const blocker = new InsufficientCraftingLevelError(
+      'copper_dagger',
+      'weaponcrafting',
+      5,
+      3,
+    );
+
+    const result = orchestrate(
+      buildSnapshot([buildCharacter('Stan', 5)]),
+      emptyState(),
+      {
+        error: blocker,
+        event: {
+          characterName: 'Stan',
+          goalId: 'missing-parent',
+          type: 'blocked',
+        },
+      },
+    );
+
+    expect(result._unsafeUnwrapErr()).toEqual(
+      new GoalProposalParentNotFoundError(
+        'reachProfessionLevel:Stan:weaponcrafting:5',
+        'missing-parent',
+      ),
+    );
+    expect(planGoalActivities).not.toHaveBeenCalled();
   });
 
   it('proposes autonomous combat Goals and plans their Activities from an empty state', () => {

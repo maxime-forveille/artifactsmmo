@@ -66,6 +66,12 @@ easiest current challenge. Other rules currently produce no candidates. Without
 a future step. Safety, Reservation, prerequisite, and resource-exclusivity
 invariants remain non-configurable.
 
+A blocked equipment craft with an insufficient profession level inserts and
+persists a `reachProfessionLevel` prerequisite before its parent Goal. The Goal
+is completed when a fresh Crew Snapshot observes the required level. Profession
+XP Activity selection is not implemented yet, so this Goal may remain idle until
+the next migration slice or an external task raises the skill.
+
 ### Durable configured Goals
 
 Configured orchestration stores active Goals in the ignored local database:

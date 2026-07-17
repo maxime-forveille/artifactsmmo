@@ -12,6 +12,7 @@ import type {
   EquipItemGoal,
   OrchestratorState,
   ReachCombatLevelGoal,
+  ReachProfessionLevelGoal,
   ReplenishBankItemGoal,
 } from '../src/bot/orchestration/orchestratorState.js';
 import {
@@ -76,6 +77,18 @@ const buildCombatGoal = (
   rule: 'combatProgression',
   targetLevel,
   type: 'reachCombatLevel',
+});
+
+const buildProfessionGoal = (): ActiveGoal & ReachProfessionLevelGoal => ({
+  characterName: 'Stan',
+  id: 'reachProfessionLevel:Stan:weaponcrafting:10',
+  origin: 'prerequisite',
+  parentGoalId: 'equip-stan-dagger',
+  reason: 'Reach the profession level required by the parent Goal',
+  rule: 'professionProgression',
+  skill: 'weaponcrafting',
+  targetLevel: 10,
+  type: 'reachProfessionLevel',
 });
 
 const buildItem = (): Item => ({
@@ -209,6 +222,24 @@ describe('createGoalActivityPlanner', () => {
         },
       ],
       state: buildState(),
+    });
+  });
+
+  it('completes a profession Goal and plans the next Goal from the same snapshot', () => {
+    const professionGoal = buildProfessionGoal();
+    const state = buildState([professionGoal, copperGoal]);
+
+    expect(buildPlanner()(buildSnapshot(), state)._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: { resourceCode: 'copper_rocks', type: 'farmResource' },
+          characterName: 'Stan',
+          consumes: [],
+          goalId: 'goal-copper',
+          produces: [{ itemCode: 'copper_ore' }],
+        },
+      ],
+      state: { goals: [copperGoal], reservations: [] },
     });
   });
 
@@ -667,6 +698,7 @@ describe('createGoalActivityPlanner', () => {
     };
 
     const result = planner(snapshot, state, {
+      error: new Error('blocked'),
       event: { goalId: equipmentGoal.id, type: 'blocked' },
     });
 

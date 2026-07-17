@@ -1726,7 +1726,10 @@ describe('planEquipmentProgression', () => {
       buildSnapshot(),
       state,
       buildItem(),
-      { event: { goalId: 'equip-stan-dagger', type: 'blocked' } },
+      {
+        error: new Error('blocked'),
+        event: { goalId: 'equip-stan-dagger', type: 'blocked' },
+      },
     );
 
     expect(result._unsafeUnwrap()).toEqual({ activities: [], state });
@@ -1737,7 +1740,10 @@ describe('planEquipmentProgression', () => {
       buildSnapshot(),
       buildState(),
       buildItem(),
-      { event: { goalId: 'another-goal', type: 'blocked' } },
+      {
+        error: new Error('blocked'),
+        event: { goalId: 'another-goal', type: 'blocked' },
+      },
     );
 
     expect(result._unsafeUnwrap().activities).toHaveLength(1);

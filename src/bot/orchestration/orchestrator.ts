@@ -22,6 +22,7 @@ import type {
   ActivityAssignment,
   OrchestratorState,
 } from './orchestratorState.js';
+import { proposeProfessionProgressionPrerequisite } from './professionProgressionPrerequisite.js';
 import type { WorldKnowledge } from './worldKnowledge.js';
 
 export type OrchestrationPlan = Readonly<{
@@ -83,18 +84,33 @@ export const createOrchestrator = (
   const planGoalActivities =
     dependencies.planGoalActivities ?? createGoalActivityPlanner(world);
 
-  if (policyConfig === undefined) {
-    return planGoalActivities;
-  }
-
   const proposeGoals =
-    dependencies.proposeGoals ?? createProgressionGoalPolicy(policyConfig);
+    dependencies.proposeGoals ??
+    (policyConfig === undefined
+      ? undefined
+      : createProgressionGoalPolicy(policyConfig));
 
   return (snapshot, state, previousOutcome) => {
+    const acceptedPrerequisite = acceptGoalProposals(
+      state,
+      proposeProfessionProgressionPrerequisite(previousOutcome),
+    );
+    if (acceptedPrerequisite.isErr()) {
+      return err(acceptedPrerequisite.error);
+    }
+
+    if (proposeGoals === undefined) {
+      return planGoalActivities(
+        snapshot,
+        acceptedPrerequisite.value,
+        previousOutcome,
+      );
+    }
+
     const acceptedBeforePlanning = acceptProposedGoals(
       snapshot,
-      state,
-      state,
+      acceptedPrerequisite.value,
+      acceptedPrerequisite.value,
       world,
       proposeGoals,
     );

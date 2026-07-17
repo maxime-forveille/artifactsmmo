@@ -16,6 +16,7 @@ import type {
   Goal,
   OrchestratorState,
   ReachCombatLevelGoal,
+  ReachProfessionLevelGoal,
   ReplenishBankItemGoal,
 } from '../src/bot/orchestration/orchestratorState.js';
 import type { WorldKnowledge } from '../src/bot/orchestration/worldKnowledge.js';
@@ -35,6 +36,18 @@ const buildReachCombatLevelGoal = (
   id,
   targetLevel,
   type: 'reachCombatLevel',
+});
+
+const buildReachProfessionLevelGoal = (
+  id: string,
+  characterName: string,
+  targetLevel: number,
+): ReachProfessionLevelGoal => ({
+  characterName,
+  id,
+  skill: 'weaponcrafting',
+  targetLevel,
+  type: 'reachProfessionLevel',
 });
 
 const buildReplenishmentGoal = (
@@ -301,6 +314,33 @@ describe('areGoalsEquivalent', () => {
       areGoalsEquivalent(
         buildReachCombatLevelGoal('combat-a', 'Stan', 7),
         buildReachCombatLevelGoal('combat-b', 'Stan', 8),
+      ),
+    ).toBe(false);
+    expect(
+      areGoalsEquivalent(
+        buildReachProfessionLevelGoal('profession-a', 'Stan', 5),
+        buildReachProfessionLevelGoal('profession-b', 'Stan', 5),
+      ),
+    ).toBe(true);
+    expect(
+      areGoalsEquivalent(
+        buildReachProfessionLevelGoal('profession-a', 'Stan', 5),
+        {
+          ...buildReachProfessionLevelGoal('profession-b', 'Stan', 5),
+          skill: 'gearcrafting',
+        },
+      ),
+    ).toBe(false);
+    expect(
+      areGoalsEquivalent(
+        buildReachProfessionLevelGoal('profession-a', 'Stan', 5),
+        buildReachProfessionLevelGoal('profession-b', 'Kyle', 5),
+      ),
+    ).toBe(false);
+    expect(
+      areGoalsEquivalent(
+        buildReachProfessionLevelGoal('profession-a', 'Stan', 5),
+        buildReachProfessionLevelGoal('profession-b', 'Stan', 6),
       ),
     ).toBe(false);
     expect(

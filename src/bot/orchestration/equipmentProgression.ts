@@ -55,12 +55,13 @@ export type EquipmentProgressionPlan = Readonly<{
   state: OrchestratorState;
 }>;
 
-export type PreviousActivityOutcome = Readonly<{
-  event: Readonly<{
-    goalId: string;
-    type: 'blocked' | 'cancelled' | 'completed';
-  }>;
-}>;
+type PreviousActivityEvent<
+  TType extends 'blocked' | 'cancelled' | 'completed',
+> = Readonly<{ characterName?: string; goalId: string; type: TType }>;
+
+export type PreviousActivityOutcome =
+  | Readonly<{ event: PreviousActivityEvent<'cancelled' | 'completed'> }>
+  | Readonly<{ error: Error; event: PreviousActivityEvent<'blocked'> }>;
 
 export class EquipmentCharacterNotFoundError extends Error {
   constructor(public readonly characterName: string) {

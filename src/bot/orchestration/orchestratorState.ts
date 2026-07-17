@@ -1,3 +1,4 @@
+import type { components } from '../../client/schema.js';
 import type { Activity } from '../activities/activity.js';
 
 import type { GoalRuleName } from './goalRule.js';
@@ -16,6 +17,14 @@ export type ReachCombatLevelGoal = Readonly<{
   type: 'reachCombatLevel';
 }>;
 
+export type ReachProfessionLevelGoal = Readonly<{
+  characterName: string;
+  id: string;
+  skill: components['schemas']['CraftSkill'];
+  targetLevel: number;
+  type: 'reachProfessionLevel';
+}>;
+
 export type ReplenishBankItemGoal = Readonly<{
   id: string;
   itemCode: string;
@@ -25,7 +34,11 @@ export type ReplenishBankItemGoal = Readonly<{
   type: 'replenishBankItem';
 }>;
 
-export type Goal = EquipItemGoal | ReachCombatLevelGoal | ReplenishBankItemGoal;
+export type Goal =
+  | EquipItemGoal
+  | ReachCombatLevelGoal
+  | ReachProfessionLevelGoal
+  | ReplenishBankItemGoal;
 
 export type ActiveGoal = Goal &
   Readonly<
