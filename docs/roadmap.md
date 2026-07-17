@@ -137,7 +137,7 @@ new orchestration Interface.
       collisions.
 - [x] Require every supported autonomous rule to be present exactly once when
       policy is configured; explicit disabling semantics remain undesigned.
-- [ ] Keep one-shot override Goals above autonomous Goal Proposals.
+- [x] Keep one-shot override Goals above autonomous Goal Proposals.
 - [ ] Log the rule, reason, configured rank, and utility evidence for every
       selected Goal Proposal.
 - [ ] Add utility weights only after deterministic rule ordering is proven.

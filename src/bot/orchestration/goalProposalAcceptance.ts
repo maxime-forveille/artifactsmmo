@@ -31,6 +31,15 @@ const activeGoalFromProposal = (proposal: GoalProposal): ActiveGoal =>
         rule: proposal.rule,
       };
 
+/**
+ * Autonomous Goals have the lowest priority tier, so existing one-shot
+ * overrides and prerequisite work remain ahead of newly proposed work.
+ */
+const appendAutonomousGoal = (
+  state: OrchestratorState,
+  activeGoal: ActiveGoal,
+): OrchestratorState => ({ ...state, goals: [...state.goals, activeGoal] });
+
 const acceptGoalProposal = (
   state: OrchestratorState,
   proposal: GoalProposal,
@@ -42,7 +51,7 @@ const acceptGoalProposal = (
   const activeGoal = activeGoalFromProposal(proposal);
 
   if (proposal.parentGoalId === undefined) {
-    return ok({ ...state, goals: [...state.goals, activeGoal] });
+    return ok(appendAutonomousGoal(state, activeGoal));
   }
 
   const parentIndex = state.goals.findIndex(

@@ -227,10 +227,11 @@ configured or future override Goals keep their distinct origins. Array order is
 the persisted priority.
 
 `orchestration/goalProposalAcceptance.ts` performs the pure acceptance
-transition. It appends autonomous proposals after active Goals, inserts
-prerequisite Goals immediately before their preserved parent, rejects missing
-parents, and treats an equivalent active Goal as an idempotent no-op. Existing
-Goal order and Reservations remain unchanged.
+transition. It appends autonomous proposals below existing one-shot override
+Goals and other already committed work, inserts prerequisite Goals immediately
+before their preserved parent, rejects missing parents, and treats an equivalent
+active Goal as an idempotent no-op. Existing Goal order and Reservations remain
+unchanged.
 
 `orchestration/orchestrator.ts` composes Goal Policy with Goal Activity planning.
 It proposes before planning so an empty state can start, then proposes once more

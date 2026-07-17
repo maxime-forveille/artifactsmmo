@@ -36,6 +36,13 @@ const configuredGoal = <TGoal extends Goal>(
   origin: 'configured',
 });
 
+const overrideGoal = <TGoal extends Goal>(
+  goal: TGoal,
+): TGoal & Readonly<{ origin: 'override' }> => ({
+  ...goal,
+  origin: 'override',
+});
+
 const buildProposal = (
   goal: GoalProposal['goal'],
   overrides: Partial<GoalProposal> = {},
@@ -85,6 +92,40 @@ describe('acceptGoalProposals', () => {
       },
     ]);
     expect(state.goals).toEqual([activeGoal]);
+  });
+
+  it('keeps a one-shot override above autonomous Goal Proposals', () => {
+    const override = overrideGoal(
+      buildEquipmentGoal('equip-stan', 'Stan', 'copper_dagger'),
+    );
+    const firstProposal = buildProposal(
+      buildCombatGoal('combat-cartman', 'Cartman', 6),
+    );
+    const secondProposal = buildProposal(
+      buildCombatGoal('combat-kyle', 'Kyle', 7),
+    );
+    const state = buildState({ goals: [override] });
+
+    expect(
+      acceptGoalProposals(state, [
+        firstProposal,
+        secondProposal,
+      ])._unsafeUnwrap().goals,
+    ).toEqual([
+      override,
+      {
+        ...firstProposal.goal,
+        origin: 'autonomous',
+        reason: firstProposal.reason,
+        rule: firstProposal.rule,
+      },
+      {
+        ...secondProposal.goal,
+        origin: 'autonomous',
+        reason: secondProposal.reason,
+        rule: secondProposal.rule,
+      },
+    ]);
   });
 
   it('inserts prerequisites immediately before their preserved parent', () => {
