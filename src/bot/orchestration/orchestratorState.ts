@@ -25,6 +25,15 @@ export type ReachProfessionLevelGoal = Readonly<{
   type: 'reachProfessionLevel';
 }>;
 
+export type ReachGatheringLevelGoal = Readonly<{
+  characterName: string;
+  id: string;
+  resourceCode: string;
+  skill: components['schemas']['GatheringSkill'];
+  targetLevel: number;
+  type: 'reachGatheringLevel';
+}>;
+
 export type ProduceItemGoal = Readonly<{
   id: string;
   itemCode: string;
@@ -47,6 +56,7 @@ export type Goal =
   | EquipItemGoal
   | ProduceItemGoal
   | ReachCombatLevelGoal
+  | ReachGatheringLevelGoal
   | ReachProfessionLevelGoal
   | ReplenishBankItemGoal;
 

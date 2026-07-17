@@ -509,6 +509,62 @@ describe('createOrchestrator', () => {
     });
   });
 
+  it('proposes and plans a configured gathering progression Goal', () => {
+    const gatheringResource: Resource = {
+      code: 'copper_rocks',
+      drops: [
+        { code: 'copper_ore', max_quantity: 1, min_quantity: 1, rate: 1 },
+      ],
+      level: 10,
+      name: 'Copper Rocks',
+      skill: 'mining',
+    };
+    const gatheringPolicy = {
+      gatheringProgressionTargets: [
+        { characterName: 'Stan', skill: 'mining' as const },
+      ],
+      goalRuleOrder: ['gatheringProgression'] as const,
+    };
+    const orchestrate = createOrchestrator(
+      buildWorld({ monsters: [], resources: [gatheringResource] }),
+      gatheringPolicy,
+    );
+
+    const result = orchestrate(
+      buildSnapshot([buildCharacter('Stan', 5)]),
+      emptyState(),
+    );
+
+    expect(result._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: { resourceCode: 'copper_rocks', type: 'farmResource' },
+          characterName: 'Stan',
+          consumes: [],
+          goalId: 'reachGatheringLevel:Stan:mining:11',
+          produces: [{ itemCode: 'copper_ore' }],
+        },
+      ],
+      state: {
+        goals: [
+          {
+            characterName: 'Stan',
+            id: 'reachGatheringLevel:Stan:mining:11',
+            origin: 'autonomous',
+            reason:
+              'Stan can progress mining from level 10 to 11 by gathering copper_rocks',
+            resourceCode: 'copper_rocks',
+            rule: 'gatheringProgression',
+            skill: 'mining',
+            targetLevel: 11,
+            type: 'reachGatheringLevel',
+          },
+        ],
+        reservations: [],
+      },
+    });
+  });
+
   it('does not run a follow-up Activity plan when policy accepts nothing new', () => {
     const planGoalActivities = vi.fn(
       (_snapshot: CrewSnapshot, state: OrchestratorState) =>

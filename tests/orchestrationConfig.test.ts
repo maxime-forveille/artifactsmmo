@@ -117,6 +117,128 @@ describe('parseOrchestrationConfig', () => {
     ).toThrow(/Invalid orchestration configuration/);
   });
 
+  it('accepts and preserves gathering progression targets', () => {
+    const gatheringProgressionTargets = [
+      { characterName: 'Stan', skill: 'mining' },
+      { characterName: 'Kyle', skill: 'woodcutting' },
+    ];
+
+    expect(
+      parseOrchestrationConfig(
+        buildRawConfig({
+          policy: { gatheringProgressionTargets, goalRuleOrder },
+        }),
+      ),
+    ).toEqual({
+      goals: [
+        {
+          id: 'replenish-copper',
+          itemCode: 'copper_ore',
+          minimumBankQuantity: 50,
+          resourceCode: 'copper_rocks',
+          type: 'replenishBankItem',
+        },
+        {
+          id: 'replenish-ash',
+          itemCode: 'ash_wood',
+          minimumBankQuantity: 25,
+          resourceCode: 'ash_tree',
+          type: 'replenishBankItem',
+        },
+      ],
+      policy: { gatheringProgressionTargets, goalRuleOrder },
+    });
+  });
+
+  it('accepts a policy with no gathering progression targets', () => {
+    expect(
+      parseOrchestrationConfig(buildRawConfig({ policy: { goalRuleOrder } })),
+    ).toEqual({
+      goals: [
+        {
+          id: 'replenish-copper',
+          itemCode: 'copper_ore',
+          minimumBankQuantity: 50,
+          resourceCode: 'copper_rocks',
+          type: 'replenishBankItem',
+        },
+        {
+          id: 'replenish-ash',
+          itemCode: 'ash_wood',
+          minimumBankQuantity: 25,
+          resourceCode: 'ash_tree',
+          type: 'replenishBankItem',
+        },
+      ],
+      policy: { goalRuleOrder },
+    });
+  });
+
+  it('rejects an unknown gathering progression skill', () => {
+    expect(() =>
+      parseOrchestrationConfig(
+        buildRawConfig({
+          policy: {
+            gatheringProgressionTargets: [
+              { characterName: 'Stan', skill: 'weaponcrafting' },
+            ],
+            goalRuleOrder,
+          },
+        }),
+      ),
+    ).toThrow(/Invalid orchestration configuration/);
+  });
+
+  it('rejects an empty gathering progression character name', () => {
+    expect(() =>
+      parseOrchestrationConfig(
+        buildRawConfig({
+          policy: {
+            gatheringProgressionTargets: [
+              { characterName: '', skill: 'mining' },
+            ],
+            goalRuleOrder,
+          },
+        }),
+      ),
+    ).toThrow(/Invalid orchestration configuration/);
+  });
+
+  it('rejects unknown gathering progression target fields', () => {
+    expect(() =>
+      parseOrchestrationConfig(
+        buildRawConfig({
+          policy: {
+            gatheringProgressionTargets: [
+              {
+                characterName: 'Stan',
+                resourceCode: 'copper_rocks',
+                skill: 'mining',
+              },
+            ],
+            goalRuleOrder,
+          },
+        }),
+      ),
+    ).toThrow(/Invalid orchestration configuration/);
+  });
+
+  it('rejects duplicate gathering progression characters', () => {
+    expect(() =>
+      parseOrchestrationConfig(
+        buildRawConfig({
+          policy: {
+            gatheringProgressionTargets: [
+              { characterName: 'Stan', skill: 'mining' },
+              { characterName: 'Stan', skill: 'woodcutting' },
+            ],
+            goalRuleOrder,
+          },
+        }),
+      ),
+    ).toThrow(/at most once/);
+  });
+
   it('accepts an explicit character equipment Goal', () => {
     expect(
       parseOrchestrationConfig(

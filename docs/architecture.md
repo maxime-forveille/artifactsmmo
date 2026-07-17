@@ -344,8 +344,22 @@ or crafting the batch size needed to reach its target, using the crew member
 who already holds the most of its required materials. Unique monster sources
 and insufficient gathering levels remain later layers.
 
-`orchestration/goalActivityPlanner.ts` applies combat, equipment, profession,
-and resource transitions in global priority order. Proposals act as temporary Reservations
+`orchestration/gatheringProgressionGoalRule.ts` implements the configured
+gathering slice: `orchestration.json` selects each character's gathering
+skill through `policy.gatheringProgressionTargets`, and the rule selects only
+the highest-level eligible resource for that skill, with resource code as a
+stable tie-breaker. It proposes one finite `reachGatheringLevel` Goal from the
+character's observed skill level to the next level, persisting the selected
+resource code on the Goal so a later catalog change cannot silently redirect
+an already accepted decision. `orchestration/gatheringProgression.ts`
+advances that Goal with one `farmResource` Activity for the persisted
+resource, completes it once the observed skill level reaches the target, and
+returns a typed planning error if the persisted resource no longer resolves,
+no longer matches the Goal's skill, or is no longer level-eligible; it never
+re-selects a different resource on its own.
+
+`orchestration/goalActivityPlanner.ts` applies combat, equipment, gathering,
+profession, and resource transitions in global priority order. Proposals act as temporary Reservations
 during the same decision, allowing independent targets to use different idle
 characters without duplicating in-flight work. It resolves item, recipe, material-source, and
 resource needs by domain code from shared `WorldKnowledge`, never by a mapping
@@ -426,11 +440,21 @@ Target shape:
       "gatheringProgression",
       "bankReplenishment",
       "bankSurplusProcessing"
+    ],
+    "gatheringProgressionTargets": [
+      { "characterName": "Stan", "skill": "mining" }
     ]
   },
   "overrides": []
 }
 ```
+
+`gatheringProgressionTargets` selects at most one gathering skill per named
+character; the strategy chooses the skill, and the `gatheringProgression`
+Goal Rule chooses only the best currently eligible resource for it. It is
+optional and defaults to no configured targets, matching every other rule
+that currently produces no candidates until configured or implemented
+further.
 
 Weights and concurrency limits may be added after ordered rules are proven, but
 safety and correctness invariants remain outside configuration. Overrides take

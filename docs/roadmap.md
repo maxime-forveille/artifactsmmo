@@ -145,7 +145,7 @@ new orchestration Interface.
 ### 6. Extract existing automatic decisions
 
 - [x] Move monster selection into pure combat planning.
-- [ ] Move resource selection into a pure gathering Goal Rule.
+- [x] Move resource selection into a pure gathering Goal Rule.
 - [x] Plan one bounded profession-XP withdrawal or craft from held and unreserved
       bank materials for durable profession Goals.
 - [x] Turn one absent raw profession-recipe material with a unique eligible

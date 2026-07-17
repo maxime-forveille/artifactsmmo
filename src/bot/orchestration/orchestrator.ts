@@ -4,6 +4,7 @@ import { proposeCombatProgressionGoals } from './combatProgressionGoalRule.js';
 import type { CrewSnapshot } from './crewSnapshot.js';
 import type { PreviousActivityOutcome } from './equipmentProgression.js';
 import { proposeEquipmentUpgradeGoals } from './equipmentUpgradeGoalRule.js';
+import { createGatheringProgressionGoalRule } from './gatheringProgressionGoalRule.js';
 import {
   createGoalActivityPlanner,
   type GoalActivityPlanner,
@@ -50,6 +51,9 @@ const createProgressionGoalPolicy = (config: GoalPolicyConfig): GoalPolicy =>
   createGoalPolicy(config, {
     combatProgression: proposeCombatProgressionGoals,
     equipmentUpgrade: proposeEquipmentUpgradeGoals,
+    gatheringProgression: createGatheringProgressionGoalRule(
+      config.gatheringProgressionTargets,
+    ),
   });
 
 const acceptProposedGoals = (

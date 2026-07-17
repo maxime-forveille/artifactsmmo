@@ -100,6 +100,18 @@ const autonomousGoal: ActiveGoal = {
   type: 'reachCombatLevel',
 };
 
+const gatheringGoal: ActiveGoal = {
+  characterName: 'Stan',
+  id: 'reachGatheringLevel:Stan:mining:6',
+  origin: 'autonomous',
+  reason: 'Stan can progress mining from level 5 to 6 by gathering iron_rocks',
+  resourceCode: 'iron_rocks',
+  rule: 'gatheringProgression',
+  skill: 'mining',
+  targetLevel: 6,
+  type: 'reachGatheringLevel',
+};
+
 const overrideGoal: ActiveGoal = {
   characterName: 'Butters',
   id: 'equipItem:Butters:copper_helmet',
@@ -116,6 +128,7 @@ const buildState = (): DurableOrchestratorState => ({
     monsterPrerequisiteGoal,
     configuredGoal,
     autonomousGoal,
+    gatheringGoal,
     overrideGoal,
   ],
 });
@@ -173,6 +186,25 @@ describe('createSqliteOrchestratorStateRepository', () => {
 
     expect(repository.load()._unsafeUnwrap()).toEqual(state);
   });
+
+  it.each(['alchemy', 'fishing', 'mining', 'woodcutting'] as const)(
+    'persists the %s gathering Goal skill',
+    (skill) => {
+      const repository = createSqliteOrchestratorStateRepository(
+        openMigratedDatabase(),
+      );
+      const goal: ActiveGoal = {
+        ...gatheringGoal,
+        id: `reachGatheringLevel:Stan:${skill}:6`,
+        skill,
+      };
+      const state = { goals: [goal, configuredGoal] };
+
+      repository.save(state)._unsafeUnwrap();
+
+      expect(repository.load()._unsafeUnwrap()).toEqual(state);
+    },
+  );
 
   it('restores durable Goals after reopening a database file', () => {
     const directory = mkdtempSync(join(tmpdir(), 'artifactsmmo-crew-'));

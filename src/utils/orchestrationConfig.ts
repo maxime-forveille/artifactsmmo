@@ -25,6 +25,21 @@ const configuredGoalSchema = v.variant('type', [
   }),
 ]);
 
+const gatheringProgressionTargetSchema = v.strictObject({
+  characterName: nonEmptyString,
+  skill: v.picklist(['alchemy', 'fishing', 'mining', 'woodcutting'] as const),
+});
+
+const gatheringProgressionTargetsSchema = v.pipe(
+  v.array(gatheringProgressionTargetSchema),
+  v.check(
+    (targets) =>
+      new Set(targets.map((target) => target.characterName)).size ===
+      targets.length,
+    'Gathering progression targets must name each character at most once',
+  ),
+);
+
 const goalRuleOrderSchema = v.pipe(
   v.array(v.picklist(GOAL_RULE_NAMES)),
   v.check(
@@ -43,7 +58,14 @@ const orchestrationConfigSchema = v.strictObject({
       'Goal ids must be unique',
     ),
   ),
-  policy: v.optional(v.strictObject({ goalRuleOrder: goalRuleOrderSchema })),
+  policy: v.optional(
+    v.strictObject({
+      gatheringProgressionTargets: v.optional(
+        gatheringProgressionTargetsSchema,
+      ),
+      goalRuleOrder: goalRuleOrderSchema,
+    }),
+  ),
 });
 
 export type OrchestrationConfig = Readonly<

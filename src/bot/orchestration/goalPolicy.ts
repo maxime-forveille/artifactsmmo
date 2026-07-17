@@ -1,3 +1,5 @@
+import type { components } from '../../client/schema.js';
+
 import type { CrewSnapshot } from './crewSnapshot.js';
 import type { GoalRuleName } from './goalRule.js';
 import type { Goal, OrchestratorState } from './orchestratorState.js';
@@ -28,7 +30,15 @@ export type GoalRuleRegistry = Readonly<
   Partial<Record<GoalRuleName, GoalRule>>
 >;
 
+export type GatheringProgressionTarget = Readonly<{
+  characterName: string;
+  skill: components['schemas']['GatheringSkill'];
+}>;
+
 export type GoalPolicyConfig = Readonly<{
+  gatheringProgressionTargets?:
+    | readonly GatheringProgressionTarget[]
+    | undefined;
   goalRuleOrder: readonly GoalRuleName[];
 }>;
 
@@ -81,6 +91,7 @@ const conflictKeyForGoal = (goal: Goal): string => {
     case 'reachCombatLevel': {
       return `${goal.type}:${goal.characterName}:${goal.targetLevel}`;
     }
+    case 'reachGatheringLevel':
     case 'reachProfessionLevel': {
       return `${goal.type}:${goal.characterName}:${goal.skill}:${goal.targetLevel}`;
     }

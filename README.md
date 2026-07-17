@@ -136,6 +136,9 @@ current explicit `goals`. Every known rule must appear exactly once:
       "gatheringProgression",
       "bankReplenishment",
       "bankSurplusProcessing"
+    ],
+    "gatheringProgressionTargets": [
+      { "characterName": "Stan", "skill": "mining" }
     ]
   }
 }
@@ -145,10 +148,14 @@ When `policy` is present, the runtime invokes Goal Policy before Activity
 planning. `combatProgression` creates one safe next-level Goal per available
 character and replaces it after the level is observed. If no level-appropriate
 monster is safe, the first `equipmentUpgrade` slice can propose an obtainable,
-equippable weapon that strictly improves combat against the easiest current
-challenge. Goals are persisted before their Activities start. Remaining named
-rules are validated but produce no candidates until their implementations land;
-finite one-shot overrides remain a later migration step. Omitting `policy` keeps
+equippable weapon that strictly improves the combat margin against the
+easiest current challenge. `gatheringProgression` creates one next-level Goal
+for each character/skill pair named in `policy.gatheringProgressionTargets`,
+selecting only the highest-level currently eligible resource for that skill;
+the configuration chooses the skill, never the rule. Goals are persisted
+before their Activities start. Remaining named rules are validated but
+produce no candidates until their implementations land; finite one-shot
+overrides remain a later migration step. Omitting `policy` keeps
 explicit-Goal behavior.
 
 When an equipment craft is blocked by its profession level, orchestration

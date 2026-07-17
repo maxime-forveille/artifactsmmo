@@ -31,6 +31,12 @@ const craftSkillSchema = v.picklist([
   'weaponcrafting',
   'woodcutting',
 ]);
+const gatheringSkillSchema = v.picklist([
+  'alchemy',
+  'fishing',
+  'mining',
+  'woodcutting',
+]);
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 
@@ -59,6 +65,14 @@ const goalSchema = v.variant('type', [
     skill: craftSkillSchema,
     targetLevel: positiveIntegerSchema,
     type: v.literal('reachProfessionLevel'),
+  }),
+  v.object({
+    characterName: nonEmptyStringSchema,
+    id: nonEmptyStringSchema,
+    resourceCode: nonEmptyStringSchema,
+    skill: gatheringSkillSchema,
+    targetLevel: positiveIntegerSchema,
+    type: v.literal('reachGatheringLevel'),
   }),
   v.object({
     id: nonEmptyStringSchema,
@@ -104,6 +118,7 @@ const persistedGoalRowsSchema = v.array(
       'equipItem',
       'produceItem',
       'reachCombatLevel',
+      'reachGatheringLevel',
       'reachProfessionLevel',
       'replenishBankItem',
     ]),

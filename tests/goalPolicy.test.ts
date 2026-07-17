@@ -17,6 +17,7 @@ import type {
   OrchestratorState,
   ProduceItemGoal,
   ReachCombatLevelGoal,
+  ReachGatheringLevelGoal,
   ReachProfessionLevelGoal,
   ReplenishBankItemGoal,
 } from '../src/bot/orchestration/orchestratorState.js';
@@ -49,6 +50,19 @@ const buildReachProfessionLevelGoal = (
   skill: 'weaponcrafting',
   targetLevel,
   type: 'reachProfessionLevel',
+});
+
+const buildReachGatheringLevelGoal = (
+  id: string,
+  characterName: string,
+  targetLevel: number,
+): ReachGatheringLevelGoal => ({
+  characterName,
+  id,
+  resourceCode: 'iron_rocks',
+  skill: 'mining',
+  targetLevel,
+  type: 'reachGatheringLevel',
 });
 
 const buildReplenishmentGoal = (
@@ -352,6 +366,33 @@ describe('areGoalsEquivalent', () => {
       areGoalsEquivalent(
         buildReachProfessionLevelGoal('profession-a', 'Stan', 5),
         buildReachProfessionLevelGoal('profession-b', 'Stan', 6),
+      ),
+    ).toBe(false);
+    expect(
+      areGoalsEquivalent(
+        buildReachGatheringLevelGoal('gathering-a', 'Stan', 6),
+        buildReachGatheringLevelGoal('gathering-b', 'Stan', 6),
+      ),
+    ).toBe(true);
+    expect(
+      areGoalsEquivalent(
+        buildReachGatheringLevelGoal('gathering-a', 'Stan', 6),
+        buildReachGatheringLevelGoal('gathering-b', 'Kyle', 6),
+      ),
+    ).toBe(false);
+    expect(
+      areGoalsEquivalent(
+        buildReachGatheringLevelGoal('gathering-a', 'Stan', 6),
+        buildReachGatheringLevelGoal('gathering-b', 'Stan', 7),
+      ),
+    ).toBe(false);
+    expect(
+      areGoalsEquivalent(
+        buildReachGatheringLevelGoal('gathering-a', 'Stan', 6),
+        {
+          ...buildReachGatheringLevelGoal('gathering-b', 'Stan', 6),
+          skill: 'woodcutting',
+        },
       ),
     ).toBe(false);
     expect(

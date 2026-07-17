@@ -14,6 +14,10 @@ import {
   type PreviousActivityOutcome,
 } from './equipmentProgression.js';
 import {
+  planGatheringProgression,
+  type GatheringProgressionError,
+} from './gatheringProgression.js';
+import {
   planItemProduction,
   type ItemProductionError,
 } from './itemProduction.js';
@@ -75,6 +79,7 @@ export class GoalResourceNotResolvedError extends Error {
 export type GoalActivityPlannerError =
   | CombatProgressionError
   | EquipmentProgressionError
+  | GatheringProgressionError
   | GoalItemNotResolvedError
   | GoalMonsterNotResolvedError
   | GoalResourceNotResolvedError
@@ -271,60 +276,62 @@ export const createGoalActivityPlanner = (
       const planned =
         goal.type === 'reachCombatLevel'
           ? planCombatProgression(snapshot, planningState, knowledge)
-          : goal.type === 'equipItem'
-            ? (() => {
-                const item = itemsByCode.get(goal.itemCode);
-                if (item === undefined) {
-                  return err(new GoalItemNotResolvedError(goal.id));
-                }
+          : goal.type === 'reachGatheringLevel'
+            ? planGatheringProgression(snapshot, planningState, knowledge)
+            : goal.type === 'equipItem'
+              ? (() => {
+                  const item = itemsByCode.get(goal.itemCode);
+                  if (item === undefined) {
+                    return err(new GoalItemNotResolvedError(goal.id));
+                  }
 
-                const equipmentKnowledge = resolveEquipmentKnowledge(
-                  knowledge,
-                  item,
-                );
-                return planEquipmentProgression(
-                  snapshot,
-                  planningState,
-                  item,
-                  previousOutcome,
-                  equipmentKnowledge.sources,
-                  equipmentKnowledge.items,
-                );
-              })()
-            : goal.type === 'reachProfessionLevel'
-              ? planProfessionProgression(snapshot, planningState, knowledge)
-              : goal.type === 'produceItem'
-                ? (() => {
-                    const item = itemsByCode.get(goal.itemCode);
-                    return item === undefined
-                      ? err(new GoalItemNotResolvedError(goal.id))
-                      : planItemProduction(snapshot, planningState, item);
-                  })()
-                : goal.type === 'replenishBankItem'
+                  const equipmentKnowledge = resolveEquipmentKnowledge(
+                    knowledge,
+                    item,
+                  );
+                  return planEquipmentProgression(
+                    snapshot,
+                    planningState,
+                    item,
+                    previousOutcome,
+                    equipmentKnowledge.sources,
+                    equipmentKnowledge.items,
+                  );
+                })()
+              : goal.type === 'reachProfessionLevel'
+                ? planProfessionProgression(snapshot, planningState, knowledge)
+                : goal.type === 'produceItem'
                   ? (() => {
-                      const monster = resolveMonster(knowledge, goal);
-                      if (goal.monsterCode !== undefined) {
-                        return monster === undefined
-                          ? err(new GoalMonsterNotResolvedError(goal.id))
-                          : planMonsterReplenishment(
+                      const item = itemsByCode.get(goal.itemCode);
+                      return item === undefined
+                        ? err(new GoalItemNotResolvedError(goal.id))
+                        : planItemProduction(snapshot, planningState, item);
+                    })()
+                  : goal.type === 'replenishBankItem'
+                    ? (() => {
+                        const monster = resolveMonster(knowledge, goal);
+                        if (goal.monsterCode !== undefined) {
+                          return monster === undefined
+                            ? err(new GoalMonsterNotResolvedError(goal.id))
+                            : planMonsterReplenishment(
+                                snapshot,
+                                planningState,
+                                monster,
+                                state.reservations,
+                              );
+                        }
+
+                        const resource = resolveResource(knowledge, goal);
+                        return resource === undefined
+                          ? err(new GoalResourceNotResolvedError(goal.id))
+                          : planResourceReplenishment(
                               snapshot,
                               planningState,
-                              monster,
+                              resource,
                               state.reservations,
                             );
-                      }
-
-                      const resource = resolveResource(knowledge, goal);
-                      return resource === undefined
-                        ? err(new GoalResourceNotResolvedError(goal.id))
-                        : planResourceReplenishment(
-                            snapshot,
-                            planningState,
-                            resource,
-                            state.reservations,
-                          );
-                    })()
-                  : ok({ activities: [], state: planningState });
+                      })()
+                    : ok({ activities: [], state: planningState });
 
       if (planned.isErr()) {
         return err(planned.error);
