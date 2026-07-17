@@ -67,6 +67,17 @@ const professionGoal: ActiveGoal = {
   type: 'reachProfessionLevel',
 };
 
+const productionGoal: ActiveGoal = {
+  id: 'produceItem:copper_bar:10',
+  itemCode: 'copper_bar',
+  minimumBankQuantity: 10,
+  origin: 'prerequisite',
+  parentGoalId: professionGoal.id,
+  reason: 'Craft an intermediate for the parent Goal',
+  rule: 'professionProgression',
+  type: 'produceItem',
+};
+
 const autonomousGoal: ActiveGoal = {
   characterName: 'Kyle',
   id: 'reachCombatLevel:Kyle:8',
@@ -87,6 +98,7 @@ const overrideGoal: ActiveGoal = {
 
 const buildState = (): DurableOrchestratorState => ({
   goals: [
+    productionGoal,
     professionGoal,
     prerequisiteGoal,
     configuredGoal,

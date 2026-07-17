@@ -25,6 +25,13 @@ export type ReachProfessionLevelGoal = Readonly<{
   type: 'reachProfessionLevel';
 }>;
 
+export type ProduceItemGoal = Readonly<{
+  id: string;
+  itemCode: string;
+  minimumBankQuantity: number;
+  type: 'produceItem';
+}>;
+
 export type ReplenishBankItemGoal = Readonly<{
   id: string;
   itemCode: string;
@@ -36,6 +43,7 @@ export type ReplenishBankItemGoal = Readonly<{
 
 export type Goal =
   | EquipItemGoal
+  | ProduceItemGoal
   | ReachCombatLevelGoal
   | ReachProfessionLevelGoal
   | ReplenishBankItemGoal;

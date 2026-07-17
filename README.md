@@ -156,10 +156,12 @@ inserts a durable `reachProfessionLevel` prerequisite immediately before the
 preserved equipment Goal. Until the required level is observed, it selects one
 known recipe supported by held and unreserved bank materials, preferring fewer
 withdrawals, then higher recipe level and stable item code. Each decision starts
-at most one material withdrawal or one craft. If no recipe is supported, one
-missing raw material with a unique gathering source becomes a durable bank-stock
-prerequisite when a crew member can already gather it. Craftable intermediates,
-monster drops, and insufficient gathering levels remain later layers.
+at most one material withdrawal or one craft. If no recipe is supported, the
+first missing material that is itself craftable from held or banked inputs
+becomes a durable `produceItem` prerequisite; otherwise a missing raw material
+with a unique gathering source becomes a `replenishBankItem` prerequisite when
+a crew member can already gather it. Monster drops and insufficient gathering
+levels remain later layers.
 
 Configured orchestration persists active Goals in the ignored local file
 `artifactsmmo-crew.sqlite`. On restart it restores those Goals with no active

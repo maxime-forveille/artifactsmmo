@@ -15,6 +15,7 @@ import type {
   EquipItemGoal,
   Goal,
   OrchestratorState,
+  ProduceItemGoal,
   ReachCombatLevelGoal,
   ReachProfessionLevelGoal,
   ReplenishBankItemGoal,
@@ -58,6 +59,16 @@ const buildReplenishmentGoal = (
   itemCode,
   minimumBankQuantity: 50,
   type: 'replenishBankItem',
+});
+
+const buildProduceItemGoal = (
+  id: string,
+  itemCode: string,
+): ProduceItemGoal => ({
+  id,
+  itemCode,
+  minimumBankQuantity: 5,
+  type: 'produceItem',
 });
 
 const configuredGoal = <TGoal extends Goal>(
@@ -353,6 +364,24 @@ describe('areGoalsEquivalent', () => {
       areGoalsEquivalent(
         buildReplenishmentGoal('bank-a', 'copper_ore'),
         buildReplenishmentGoal('bank-b', 'ash_wood'),
+      ),
+    ).toBe(false);
+    expect(
+      areGoalsEquivalent(
+        buildProduceItemGoal('produce-a', 'copper_bar'),
+        buildProduceItemGoal('produce-b', 'copper_bar'),
+      ),
+    ).toBe(true);
+    expect(
+      areGoalsEquivalent(
+        buildProduceItemGoal('produce-a', 'copper_bar'),
+        buildProduceItemGoal('produce-b', 'iron_bar'),
+      ),
+    ).toBe(false);
+    expect(
+      areGoalsEquivalent(
+        buildProduceItemGoal('produce-a', 'copper_bar'),
+        buildReplenishmentGoal('bank-a', 'copper_bar'),
       ),
     ).toBe(false);
   });

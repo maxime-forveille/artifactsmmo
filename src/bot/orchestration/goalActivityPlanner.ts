@@ -13,6 +13,10 @@ import {
   type EquipmentProgressionError,
   type PreviousActivityOutcome,
 } from './equipmentProgression.js';
+import {
+  planItemProduction,
+  type ItemProductionError,
+} from './itemProduction.js';
 import type {
   ActivityAssignment,
   OrchestratorState,
@@ -61,6 +65,7 @@ export type GoalActivityPlannerError =
   | EquipmentProgressionError
   | GoalItemNotResolvedError
   | GoalResourceNotResolvedError
+  | ItemProductionError
   | ProfessionCharacterNotFoundError
   | ResourceReplenishmentError;
 
@@ -266,19 +271,26 @@ export const createGoalActivityPlanner = (
               })()
             : goal.type === 'reachProfessionLevel'
               ? planProfessionProgression(snapshot, planningState, knowledge)
-              : goal.type === 'replenishBankItem'
+              : goal.type === 'produceItem'
                 ? (() => {
-                    const resource = resolveResource(knowledge, goal);
-                    return resource === undefined
-                      ? err(new GoalResourceNotResolvedError(goal.id))
-                      : planResourceReplenishment(
-                          snapshot,
-                          planningState,
-                          resource,
-                          state.reservations,
-                        );
+                    const item = itemsByCode.get(goal.itemCode);
+                    return item === undefined
+                      ? err(new GoalItemNotResolvedError(goal.id))
+                      : planItemProduction(snapshot, planningState, item);
                   })()
-                : ok({ activities: [], state: planningState });
+                : goal.type === 'replenishBankItem'
+                  ? (() => {
+                      const resource = resolveResource(knowledge, goal);
+                      return resource === undefined
+                        ? err(new GoalResourceNotResolvedError(goal.id))
+                        : planResourceReplenishment(
+                            snapshot,
+                            planningState,
+                            resource,
+                            state.reservations,
+                          );
+                    })()
+                  : ok({ activities: [], state: planningState });
 
       if (planned.isErr()) {
         return err(planned.error);

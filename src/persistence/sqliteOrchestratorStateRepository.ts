@@ -42,6 +42,12 @@ const goalSchema = v.variant('type', [
     type: v.literal('equipItem'),
   }),
   v.object({
+    id: nonEmptyStringSchema,
+    itemCode: nonEmptyStringSchema,
+    minimumBankQuantity: positiveIntegerSchema,
+    type: v.literal('produceItem'),
+  }),
+  v.object({
     characterName: nonEmptyStringSchema,
     id: nonEmptyStringSchema,
     targetLevel: positiveIntegerSchema,
@@ -95,6 +101,7 @@ const persistedGoalRowsSchema = v.array(
     rule: v.nullable(v.picklist(GOAL_RULE_NAMES)),
     type: v.picklist([
       'equipItem',
+      'produceItem',
       'reachCombatLevel',
       'reachProfessionLevel',
       'replenishBankItem',

@@ -6,6 +6,7 @@ import type { CrewSnapshot } from './crewSnapshot.js';
 import type { GoalProposal } from './goalPolicy.js';
 import type {
   OrchestratorState,
+  ProduceItemGoal,
   ReachProfessionLevelGoal,
   ReplenishBankItemGoal,
 } from './orchestratorState.js';
@@ -24,17 +25,33 @@ type RecipeItem = Item &
       Readonly<{ items: readonly SimpleItem[] }>;
   }>;
 
-type GatherableMaterial = Readonly<{
+type GatherPrerequisite = Readonly<{
   itemCode: string;
+  kind: 'gather';
   missingQuantity: number;
   recipe: RecipeItem;
   resource: Resource;
 }>;
 
+type CraftPrerequisite = Readonly<{
+  itemCode: string;
+  kind: 'craft';
+  missingQuantity: number;
+  producedItem: RecipeItem;
+  recipe: RecipeItem;
+}>;
+
+type MaterialPrerequisite = CraftPrerequisite | GatherPrerequisite;
+
 export const createReplenishBankItemGoalId = (
   itemCode: string,
   minimumBankQuantity: number,
 ): string => `replenishBankItem:${itemCode}:${minimumBankQuantity}`;
+
+export const createProduceItemGoalId = (
+  itemCode: string,
+  minimumBankQuantity: number,
+): string => `produceItem:${itemCode}:${minimumBankQuantity}`;
 
 const bankQuantity = (snapshot: CrewSnapshot, itemCode: string): number =>
   snapshot.bank
@@ -62,6 +79,24 @@ const isEligibleRecipe = (
   item.craft.items !== undefined &&
   item.craft.items.length > 0;
 
+const isDirectlySupported = (
+  snapshot: CrewSnapshot,
+  state: OrchestratorState,
+  character: Character,
+  materials: readonly SimpleItem[],
+): boolean =>
+  materials.every((material) => {
+    const missingQuantity = Math.max(
+      material.quantity - heldQuantity(character, material.code),
+      0,
+    );
+
+    return (
+      missingQuantity === 0 ||
+      availableBankQuantity(snapshot, state, material.code) >= missingQuantity
+    );
+  });
+
 const uniqueGatheringSource = (
   knowledge: WorldKnowledge,
   itemCode: string,
@@ -78,13 +113,19 @@ const uniqueGatheringSource = (
     : undefined;
 };
 
-const findGatherableMaterial = (
+const isRecipeItem = (item: Item): item is RecipeItem =>
+  item.craft?.items !== undefined && item.craft.items.length > 0;
+
+const asRecipeItem = (item: Item): RecipeItem | undefined =>
+  isRecipeItem(item) ? item : undefined;
+
+const findMaterialPrerequisite = (
   snapshot: CrewSnapshot,
   state: OrchestratorState,
   character: Character,
   goal: ReachProfessionLevelGoal,
   knowledge: WorldKnowledge,
-): GatherableMaterial | undefined => {
+): MaterialPrerequisite | undefined => {
   const currentLevel = craftSkillLevel(character, goal.skill);
   const itemsByCode = new Map(
     knowledge.items.map((item) => [item.code, item] as const),
@@ -112,7 +153,30 @@ const findGatherableMaterial = (
       }
 
       const item = itemsByCode.get(material.code);
-      if (item === undefined || item.craft?.skill !== undefined) {
+      if (item === undefined) {
+        continue;
+      }
+
+      const producedItem = asRecipeItem(item);
+      if (
+        producedItem !== undefined &&
+        isDirectlySupported(
+          snapshot,
+          state,
+          character,
+          producedItem.craft.items,
+        )
+      ) {
+        return {
+          itemCode: material.code,
+          kind: 'craft',
+          missingQuantity,
+          producedItem,
+          recipe,
+        };
+      }
+
+      if (item.craft?.skill !== undefined) {
         continue;
       }
 
@@ -121,7 +185,13 @@ const findGatherableMaterial = (
         resource !== undefined &&
         findBestGatherer(snapshot, resource) !== undefined
       ) {
-        return { itemCode: material.code, missingQuantity, recipe, resource };
+        return {
+          itemCode: material.code,
+          kind: 'gather',
+          missingQuantity,
+          recipe,
+          resource,
+        };
       }
     }
   }
@@ -141,7 +211,20 @@ const createReplenishmentGoal = (
   type: 'replenishBankItem',
 });
 
-/** Proposes one raw-material prerequisite for a blocked profession Goal. */
+const createProductionGoal = (
+  itemCode: string,
+  minimumBankQuantity: number,
+): ProduceItemGoal => ({
+  id: createProduceItemGoalId(itemCode, minimumBankQuantity),
+  itemCode,
+  minimumBankQuantity,
+  type: 'produceItem',
+});
+
+/**
+ * Proposes one raw-material or intermediate-craft prerequisite for a blocked
+ * profession Goal.
+ */
 export const proposeProfessionMaterialPrerequisite = (
   snapshot: CrewSnapshot,
   state: OrchestratorState,
@@ -173,27 +256,42 @@ export const proposeProfessionMaterialPrerequisite = (
     return [];
   }
 
-  const material = findGatherableMaterial(
+  const prerequisite = findMaterialPrerequisite(
     snapshot,
     state,
     character,
     goal,
     knowledge,
   );
-  if (material === undefined) {
+  if (prerequisite === undefined) {
     return [];
+  }
+
+  if (prerequisite.kind === 'craft') {
+    return [
+      {
+        configuredRank: -1,
+        goal: createProductionGoal(
+          prerequisite.itemCode,
+          prerequisite.missingQuantity,
+        ),
+        parentGoalId: goal.id,
+        reason: `${goal.characterName} needs ${prerequisite.missingQuantity}x ${prerequisite.itemCode} crafted to craft ${prerequisite.recipe.code} for ${goal.skill} XP`,
+        rule: 'professionProgression',
+      },
+    ];
   }
 
   return [
     {
       configuredRank: -1,
       goal: createReplenishmentGoal(
-        material.itemCode,
-        material.missingQuantity,
-        material.resource.code,
+        prerequisite.itemCode,
+        prerequisite.missingQuantity,
+        prerequisite.resource.code,
       ),
       parentGoalId: goal.id,
-      reason: `${goal.characterName} needs ${material.missingQuantity}x ${material.itemCode} from ${material.resource.code} to craft ${material.recipe.code} for ${goal.skill} XP`,
+      reason: `${goal.characterName} needs ${prerequisite.missingQuantity}x ${prerequisite.itemCode} from ${prerequisite.resource.code} to craft ${prerequisite.recipe.code} for ${goal.skill} XP`,
       rule: 'professionProgression',
     },
   ];

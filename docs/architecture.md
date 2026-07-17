@@ -262,13 +262,15 @@ creates a finite `reachProfessionLevel` prerequisite immediately before its
 preserved equipment parent, outside configurable autonomous rule order. The
 profession planner selects one recipe already supported by held and unreserved
 bank stock, then proposes at most one withdrawal or craft. When none is
-supported, one missing raw material with one unambiguous gathering source can
-become a `replenishBankItem` prerequisite if an eligible gatherer already
-exists. That child is inserted before the profession Goal and completes before
-its parent consumes the stock. Completing each prerequisite resumes its
-preserved parent Goal. Stable semantic IDs prevent the same Goal from being
-proposed twice and persistent Goals prevent policy from oscillating on every
-snapshot.
+supported, it scans the best-level-eligible recipe's materials in order and
+acts on the first one it can resolve: if that material is itself craftable
+from inputs already held or banked, it becomes a `produceItem` prerequisite;
+otherwise, if it has exactly one unambiguous gathering source and an eligible
+gatherer already exists, it becomes a `replenishBankItem` prerequisite. Either
+child is inserted before the profession Goal and completes before its parent
+consumes the stock. Completing each prerequisite resumes its preserved parent
+Goal. Stable semantic IDs prevent the same Goal from being proposed twice and
+persistent Goals prevent policy from oscillating on every snapshot.
 
 `orchestration/worldKnowledge.ts` reads every static item, monster, and resource
 catalog page into deterministic code-sorted collections. The underlying client
@@ -332,10 +334,14 @@ level, filters recipes by skill and current level, excludes material demand not
 covered by inventory plus unreserved bank stock, and ranks usable recipes by
 fewest withdrawals, highest recipe level, then item code. It emits at most one
 `withdrawItem` or `craftItem` Activity. `professionMaterialPrerequisite` examines
-eligible recipes only when none is immediately supported and can insert one
-raw-material bank Goal for a unique resource source and an already eligible
-gatherer. Craftable intermediates, unique monster sources, and gathering-level
-prerequisites remain later layers.
+eligible recipes only when none is immediately supported: it prefers a
+craftable intermediate whose own materials are already held or banked,
+proposing a `produceItem` Goal, and otherwise falls back to a raw material with
+a unique gathering source and an eligible gatherer. `itemProduction` advances a
+`produceItem` Goal by depositing held stock, withdrawing one missing material,
+or crafting the batch size needed to reach its target, using the crew member
+who already holds the most of its required materials. Unique monster sources
+and insufficient gathering levels remain later layers.
 
 `orchestration/goalActivityPlanner.ts` applies combat, equipment, profession,
 and resource transitions in global priority order. Proposals act as temporary Reservations

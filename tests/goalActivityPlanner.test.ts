@@ -11,6 +11,7 @@ import type {
   ActiveGoal,
   EquipItemGoal,
   OrchestratorState,
+  ProduceItemGoal,
   ReachCombatLevelGoal,
   ReachProfessionLevelGoal,
   ReplenishBankItemGoal,
@@ -97,6 +98,17 @@ const buildItem = (): Item => ({
   craft: { items: [], level: 5, quantity: 1, skill: 'weaponcrafting' },
   level: 5,
   type: 'weapon',
+});
+
+const buildProductionGoal = (): ActiveGoal & ProduceItemGoal => ({
+  id: 'produceItem:copper_bar:2',
+  itemCode: 'copper_bar',
+  minimumBankQuantity: 2,
+  origin: 'prerequisite',
+  parentGoalId: 'reachProfessionLevel:Stan:weaponcrafting:10',
+  reason: 'Craft an intermediate for the parent Goal',
+  rule: 'professionProgression',
+  type: 'produceItem',
 });
 
 const buildRawItem = (code: string): Item => ({ ...({} as Item), code });
@@ -241,6 +253,55 @@ describe('createGoalActivityPlanner', () => {
       ],
       state: { goals: [copperGoal], reservations: [] },
     });
+  });
+
+  it('resolves a produceItem Goal against shared world knowledge and crafts it', () => {
+    const productionGoal = buildProductionGoal();
+    const barItem: Item = {
+      ...({} as Item),
+      code: 'copper_bar',
+      craft: {
+        items: [{ code: 'copper_ore', quantity: 2 }],
+        level: 1,
+        quantity: 1,
+        skill: 'mining',
+      },
+    };
+    const character = {
+      ...buildCharacter('Stan'),
+      inventory: [{ code: 'copper_ore', quantity: 4, slot: 0 }],
+    };
+    const planner = createGoalActivityPlanner(
+      buildKnowledge({ items: [barItem] }),
+    );
+    const state = buildState([productionGoal]);
+
+    expect(
+      planner(
+        { ...buildSnapshot(), characters: [character] },
+        state,
+      )._unsafeUnwrap(),
+    ).toEqual({
+      activities: [
+        {
+          activity: { itemCode: 'copper_bar', quantity: 2, type: 'craftItem' },
+          characterName: 'Stan',
+          consumes: [{ itemCode: 'copper_ore', quantity: 4 }],
+          goalId: productionGoal.id,
+          produces: [{ itemCode: 'copper_bar', quantity: 2 }],
+        },
+      ],
+      state,
+    });
+  });
+
+  it('returns a typed error when a produceItem Goal target is not resolved', () => {
+    const productionGoal = buildProductionGoal();
+    const state = buildState([productionGoal]);
+
+    expect(buildPlanner()(buildSnapshot(), state)._unsafeUnwrapErr()).toEqual(
+      new GoalItemNotResolvedError(productionGoal.id),
+    );
   });
 
   it('plans combat before lower-priority resource work on another character', () => {

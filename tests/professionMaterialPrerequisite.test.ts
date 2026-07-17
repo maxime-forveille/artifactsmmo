@@ -6,6 +6,7 @@ import type {
   OrchestratorState,
 } from '../src/bot/orchestration/orchestratorState.js';
 import {
+  createProduceItemGoalId,
   createReplenishBankItemGoalId,
   proposeProfessionMaterialPrerequisite,
 } from '../src/bot/orchestration/professionMaterialPrerequisite.js';
@@ -117,6 +118,14 @@ describe('createReplenishBankItemGoalId', () => {
   it('creates a stable semantic id from the item and target quantity', () => {
     expect(createReplenishBankItemGoalId('copper_ore', 2)).toBe(
       'replenishBankItem:copper_ore:2',
+    );
+  });
+});
+
+describe('createProduceItemGoalId', () => {
+  it('creates a stable semantic id from the item and target quantity', () => {
+    expect(createProduceItemGoalId('copper_bar', 2)).toBe(
+      'produceItem:copper_bar:2',
     );
   });
 });
@@ -383,6 +392,170 @@ describe('proposeProfessionMaterialPrerequisite', () => {
         buildKnowledge({ items: [buildRawItem(), recipe] }),
       )[0]?.goal,
     ).toMatchObject({ itemCode: 'copper_ore' });
+  });
+
+  it('proposes a craft prerequisite for a missing intermediate with satisfied materials', () => {
+    const intermediate = buildRawItem({
+      code: 'copper_bar',
+      craft: {
+        items: [{ code: 'copper_ore', quantity: 2 }],
+        level: 1,
+        quantity: 1,
+        skill: 'mining',
+      },
+    });
+    const recipe = buildRecipe({
+      craft: {
+        items: [{ code: 'copper_bar', quantity: 3 }],
+        level: 2,
+        quantity: 1,
+        skill: 'weaponcrafting',
+      },
+    });
+
+    expect(
+      proposeProfessionMaterialPrerequisite(
+        buildSnapshot(buildCharacter(), [{ code: 'copper_ore', quantity: 6 }]),
+        buildState(),
+        buildKnowledge({ items: [buildRawItem(), intermediate, recipe] }),
+      ),
+    ).toEqual([
+      {
+        configuredRank: -1,
+        goal: {
+          id: 'produceItem:copper_bar:3',
+          itemCode: 'copper_bar',
+          minimumBankQuantity: 3,
+          type: 'produceItem',
+        },
+        parentGoalId: professionGoal.id,
+        reason:
+          'Stan needs 3x copper_bar crafted to craft training_blade for weaponcrafting XP',
+        rule: 'professionProgression',
+      },
+    ]);
+  });
+
+  it('skips a satisfied material to reach a craftable intermediate further in the recipe', () => {
+    const intermediate = buildRawItem({
+      code: 'copper_bar',
+      craft: {
+        items: [{ code: 'copper_ore', quantity: 1 }],
+        level: 1,
+        quantity: 1,
+        skill: 'mining',
+      },
+    });
+    const recipe = buildRecipe({
+      craft: {
+        items: [
+          { code: 'ash_wood', quantity: 1 },
+          { code: 'copper_bar', quantity: 1 },
+        ],
+        level: 2,
+        quantity: 1,
+        skill: 'weaponcrafting',
+      },
+    });
+    const character = buildCharacter({
+      inventory: [{ code: 'ash_wood', quantity: 1, slot: 0 }],
+    });
+
+    expect(
+      proposeProfessionMaterialPrerequisite(
+        buildSnapshot(character, [{ code: 'copper_ore', quantity: 1 }]),
+        buildState(),
+        buildKnowledge({ items: [buildRawItem(), intermediate, recipe] }),
+      )[0]?.goal,
+    ).toMatchObject({ itemCode: 'copper_bar', type: 'produceItem' });
+  });
+
+  it('does not treat a craft definition without materials as a resolvable intermediate', () => {
+    const intermediate = buildRawItem({
+      code: 'copper_bar',
+      craft: { items: [], level: 1, quantity: 1, skill: 'mining' },
+    });
+    const recipe = buildRecipe({
+      craft: {
+        items: [{ code: 'copper_bar', quantity: 1 }],
+        level: 2,
+        quantity: 1,
+        skill: 'weaponcrafting',
+      },
+    });
+
+    expect(
+      proposeProfessionMaterialPrerequisite(
+        buildSnapshot(),
+        buildState(),
+        buildKnowledge({ items: [buildRawItem(), intermediate, recipe] }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('requires every one of a craftable material own materials, not just one', () => {
+    const intermediate = buildRawItem({
+      code: 'copper_bar',
+      craft: {
+        items: [
+          { code: 'copper_ore', quantity: 2 },
+          { code: 'coal', quantity: 1 },
+        ],
+        level: 1,
+        quantity: 1,
+        skill: 'mining',
+      },
+    });
+    const recipe = buildRecipe({
+      craft: {
+        items: [
+          { code: 'copper_bar', quantity: 1 },
+          { code: 'copper_ore', quantity: 2 },
+        ],
+        level: 2,
+        quantity: 1,
+        skill: 'weaponcrafting',
+      },
+    });
+
+    expect(
+      proposeProfessionMaterialPrerequisite(
+        buildSnapshot(buildCharacter(), [{ code: 'copper_ore', quantity: 6 }]),
+        buildState(),
+        buildKnowledge({ items: [buildRawItem(), intermediate, recipe] }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('falls through an unsatisfiable craftable material to the next recipe material', () => {
+    const recipe = buildRecipe({
+      craft: {
+        items: [
+          { code: 'copper_bar', quantity: 1 },
+          { code: 'copper_ore', quantity: 2 },
+        ],
+        level: 2,
+        quantity: 1,
+        skill: 'weaponcrafting',
+      },
+    });
+    const intermediate = buildRawItem({
+      code: 'copper_bar',
+      craft: {
+        items: [{ code: 'iron_ore', quantity: 2 }],
+        level: 1,
+        quantity: 1,
+        skill: 'mining',
+      },
+    });
+
+    expect(
+      proposeProfessionMaterialPrerequisite(
+        buildSnapshot(),
+        buildState(),
+        buildKnowledge({ items: [buildRawItem(), intermediate, recipe] }),
+      )[0]?.goal,
+    ).toMatchObject({ itemCode: 'copper_ore', type: 'replenishBankItem' });
   });
 
   it('does not acquire for a harder recipe while an easier recipe is executable', () => {
