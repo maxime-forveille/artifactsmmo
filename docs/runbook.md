@@ -267,6 +267,15 @@ incompatible with Stryker's sandbox tsconfig rewriting. The wrapper creates an
 independent temporary safety backup for every literal mutation target in
 addition to Stryker's `.stryker-tmp` backup, and restores it when the run exits.
 
+Static mutants are ignored because they run while modules are loaded instead of
+inside a test. They cannot benefit from per-test coverage and made mutation runs
+much slower. Regular tests still cover module initialization and configuration.
+The full mutation audit targets business policy, Activities, and pure bot
+helpers. It excludes `src/bot/runtime/` adapters and transitional
+`src/bot/tasks/` implementations. The configured thresholds are 80% for a
+successful high score and 50% for the low warning threshold; equivalent or
+implementation-only survivors do not justify chasing 100%.
+
 The Vitest runner creates one `stryker-setup-<worker>.js` file in the project
 root and can fail to remove every file when workers close concurrently. The
 package scripts use `scripts/runMutationTests.ts` to preserve concurrency while
