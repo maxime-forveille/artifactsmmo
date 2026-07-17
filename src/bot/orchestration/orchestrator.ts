@@ -22,6 +22,7 @@ import type {
   ActivityAssignment,
   OrchestratorState,
 } from './orchestratorState.js';
+import { proposeProfessionMaterialPrerequisite } from './professionMaterialPrerequisite.js';
 import { proposeProfessionProgressionPrerequisite } from './professionProgressionPrerequisite.js';
 import type { WorldKnowledge } from './worldKnowledge.js';
 
@@ -99,18 +100,30 @@ export const createOrchestrator = (
       return err(acceptedPrerequisite.error);
     }
 
+    const acceptedMaterialPrerequisite = acceptGoalProposals(
+      acceptedPrerequisite.value,
+      proposeProfessionMaterialPrerequisite(
+        snapshot,
+        acceptedPrerequisite.value,
+        world,
+      ),
+    );
+    if (acceptedMaterialPrerequisite.isErr()) {
+      return err(acceptedMaterialPrerequisite.error);
+    }
+
     if (proposeGoals === undefined) {
       return planGoalActivities(
         snapshot,
-        acceptedPrerequisite.value,
+        acceptedMaterialPrerequisite.value,
         previousOutcome,
       );
     }
 
     const acceptedBeforePlanning = acceptProposedGoals(
       snapshot,
-      acceptedPrerequisite.value,
-      acceptedPrerequisite.value,
+      acceptedMaterialPrerequisite.value,
+      acceptedMaterialPrerequisite.value,
       world,
       proposeGoals,
     );

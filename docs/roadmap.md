@@ -146,8 +146,13 @@ new orchestration Interface.
 
 - [x] Move monster selection into pure combat planning.
 - [ ] Move resource selection into a pure gathering Goal Rule.
-- [ ] Plan bounded profession-XP crafts for durable profession Goals, then remove
-      equivalent profession decisions from local task-runner Maps.
+- [x] Plan one bounded profession-XP withdrawal or craft from held and unreserved
+      bank materials for durable profession Goals.
+- [x] Turn one absent raw profession-recipe material with a unique eligible
+      gathering source into a durable bank-stock prerequisite.
+- [ ] Turn craftable intermediates, monster drops, and insufficient gathering
+      levels into one-layer profession prerequisites, then remove equivalent
+      local task-runner decisions.
 - [ ] Extend the first weapon-only equipment Goal Rule to the remaining combat
       slots.
 - [ ] Split farming and hunting super-Activities into short gathering/combat

@@ -485,6 +485,66 @@ describe('createGoalActivityPlanner', () => {
     });
   });
 
+  it('completes a material prerequisite before its parent consumes the stock', () => {
+    const equipmentGoal = buildEquipmentGoal();
+    const professionGoal: ActiveGoal & ReachProfessionLevelGoal = {
+      ...buildProfessionGoal(),
+      id: 'reachProfessionLevel:Stan:weaponcrafting:11',
+      targetLevel: 11,
+    };
+    const replenishGoal: ActiveGoal & ReplenishBankItemGoal = {
+      id: 'replenishBankItem:copper_bar:2',
+      itemCode: 'copper_bar',
+      minimumBankQuantity: 2,
+      origin: 'prerequisite',
+      parentGoalId: professionGoal.id,
+      reason: 'Supply a profession XP recipe',
+      resourceCode: 'copper_rocks',
+      rule: 'professionProgression',
+      type: 'replenishBankItem',
+    };
+    const trainingRecipe: Item = {
+      ...({} as Item),
+      code: 'training_blade',
+      craft: {
+        items: [{ code: 'copper_bar', quantity: 2 }],
+        level: 10,
+        quantity: 1,
+        skill: 'weaponcrafting',
+      },
+    };
+    const barResource = buildResource('copper_rocks', 'copper_bar', 'mining');
+    const state = buildState([replenishGoal, professionGoal, equipmentGoal]);
+    const planner = createGoalActivityPlanner(
+      buildKnowledge({
+        items: [buildItem(), trainingRecipe],
+        resources: [barResource],
+      }),
+    );
+
+    expect(
+      planner(
+        buildSnapshot([{ code: 'copper_bar', quantity: 2 }]),
+        state,
+      )._unsafeUnwrap(),
+    ).toEqual({
+      activities: [
+        {
+          activity: {
+            itemCode: 'copper_bar',
+            quantity: 2,
+            type: 'withdrawItem',
+          },
+          characterName: 'Stan',
+          consumes: [{ itemCode: 'copper_bar', quantity: 2 }],
+          goalId: professionGoal.id,
+          produces: [],
+        },
+      ],
+      state: { goals: [professionGoal, equipmentGoal], reservations: [] },
+    });
+  });
+
   it('ignores unrelated bank items when evaluating a resource Goal', () => {
     const result = buildPlanner()(
       buildSnapshot([{ code: 'ash_wood', quantity: 50 }]),

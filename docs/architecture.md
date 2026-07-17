@@ -259,11 +259,16 @@ Priority tiers are:
 The policy expands prerequisite cascades one observed layer at a time rather
 than speculating a complete tree. An `InsufficientCraftingLevelError` Blocker
 creates a finite `reachProfessionLevel` prerequisite immediately before its
-preserved equipment parent, outside configurable autonomous rule order. That
-profession Goal can later propose craft and resource work. Completing a
-prerequisite resumes its preserved parent Goal. Stable semantic IDs prevent the
-same Goal from being proposed twice and persistent Goals prevent policy from
-oscillating on every snapshot.
+preserved equipment parent, outside configurable autonomous rule order. The
+profession planner selects one recipe already supported by held and unreserved
+bank stock, then proposes at most one withdrawal or craft. When none is
+supported, one missing raw material with one unambiguous gathering source can
+become a `replenishBankItem` prerequisite if an eligible gatherer already
+exists. That child is inserted before the profession Goal and completes before
+its parent consumes the stock. Completing each prerequisite resumes its
+preserved parent Goal. Stable semantic IDs prevent the same Goal from being
+proposed twice and persistent Goals prevent policy from oscillating on every
+snapshot.
 
 `orchestration/worldKnowledge.ts` reads every static item, monster, and resource
 catalog page into deterministic code-sorted collections. The underlying client
@@ -321,12 +326,19 @@ by in-flight withdrawals from observed bank stock. Replenishment waits for
 active withdrawals to settle, while withdrawals proposed in the current pure
 decision can trigger parallel replenishment. Matching production already in
 flight, busy holders, and busy crafters also cause the Goal to wait.
-Crafting-level Blockers become durable profession prerequisites. The first
-`professionProgression` planner slice reconciles completion from the observed
-profession level; selecting and executing XP crafts remains the next slice.
+Crafting-level Blockers become durable profession prerequisites.
+`professionProgression` reconciles completion from the observed profession
+level, filters recipes by skill and current level, excludes material demand not
+covered by inventory plus unreserved bank stock, and ranks usable recipes by
+fewest withdrawals, highest recipe level, then item code. It emits at most one
+`withdrawItem` or `craftItem` Activity. `professionMaterialPrerequisite` examines
+eligible recipes only when none is immediately supported and can insert one
+raw-material bank Goal for a unique resource source and an already eligible
+gatherer. Craftable intermediates, unique monster sources, and gathering-level
+prerequisites remain later layers.
 
-`orchestration/goalActivityPlanner.ts` applies combat, equipment, profession, and resource
-transitions in global priority order. Proposals act as temporary Reservations
+`orchestration/goalActivityPlanner.ts` applies combat, equipment, profession,
+and resource transitions in global priority order. Proposals act as temporary Reservations
 during the same decision, allowing independent targets to use different idle
 characters without duplicating in-flight work. It resolves item, recipe, material-source, and
 resource needs by domain code from shared `WorldKnowledge`, never by a mapping
@@ -460,9 +472,9 @@ contain authorization data.
 
 ## Known structural debt
 
-- Only the `combatProgression` Goal Rule is live; equipment, profession,
-  gathering, bank-replenishment, and bank-surplus rules still produce no Goal
-  Proposals.
+- `combatProgression` and the first weapon-only `equipmentUpgrade` Goal Rules
+  are live. Profession Goals currently originate from Blockers; gathering,
+  bank-replenishment, and bank-surplus rules still produce no Goal Proposals.
 - `tasks/taskRunners.ts` still contains hidden orchestration and persistent
   profession goals.
 - `combat.ts` mixes pure safety calculations with combat execution.

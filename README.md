@@ -151,12 +151,15 @@ rules are validated but produce no candidates until their implementations land;
 finite one-shot overrides remain a later migration step. Omitting `policy` keeps
 explicit-Goal behavior.
 
-When an equipment craft is blocked by its profession level, orchestration now
+When an equipment craft is blocked by its profession level, orchestration
 inserts a durable `reachProfessionLevel` prerequisite immediately before the
-preserved equipment Goal. It completes from the observed character skill level.
-Selecting the bounded crafts that earn the missing profession XP is the next
-migration slice; until then this prerequisite records the correct intent but does
-not start XP work itself.
+preserved equipment Goal. Until the required level is observed, it selects one
+known recipe supported by held and unreserved bank materials, preferring fewer
+withdrawals, then higher recipe level and stable item code. Each decision starts
+at most one material withdrawal or one craft. If no recipe is supported, one
+missing raw material with a unique gathering source becomes a durable bank-stock
+prerequisite when a crew member can already gather it. Craftable intermediates,
+monster drops, and insufficient gathering levels remain later layers.
 
 Configured orchestration persists active Goals in the ignored local file
 `artifactsmmo-crew.sqlite`. On restart it restores those Goals with no active

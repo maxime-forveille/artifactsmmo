@@ -196,6 +196,89 @@ describe('createOrchestrator', () => {
     });
   });
 
+  it('inserts a raw-material prerequisite before a profession Goal and starts gathering', () => {
+    const equipmentGoal: ActiveGoal = {
+      characterName: 'Stan',
+      id: 'equipItem:Stan:copper_dagger',
+      itemCode: 'copper_dagger',
+      origin: 'autonomous',
+      reason: 'Improve Stan combat equipment',
+      rule: 'equipmentUpgrade',
+      type: 'equipItem',
+    };
+    const professionGoal: ActiveGoal = {
+      characterName: 'Stan',
+      id: 'reachProfessionLevel:Stan:weaponcrafting:5',
+      origin: 'prerequisite',
+      parentGoalId: equipmentGoal.id,
+      reason: 'Reach the profession level required by the parent Goal',
+      rule: 'professionProgression',
+      skill: 'weaponcrafting',
+      targetLevel: 5,
+      type: 'reachProfessionLevel',
+    };
+    const rawItem = { ...({} as Item), code: 'copper_ore' };
+    const trainingRecipe: Item = {
+      ...({} as Item),
+      code: 'training_blade',
+      craft: {
+        items: [{ code: 'copper_ore', quantity: 2 }],
+        level: 2,
+        quantity: 1,
+        skill: 'weaponcrafting',
+      },
+    };
+    const orchestrate = createOrchestrator(
+      buildWorld({
+        items: [buildWeapon(), rawItem, trainingRecipe],
+        monsters: [],
+        resources: [buildResource()],
+      }),
+    );
+
+    const result = orchestrate(
+      buildSnapshot([
+        {
+          ...buildCharacter('Stan', 5),
+          mining_level: 1,
+          weaponcrafting_level: 2,
+        },
+      ]),
+      { goals: [professionGoal, equipmentGoal], reservations: [] },
+    );
+
+    expect(result._unsafeUnwrap()).toEqual({
+      activities: [
+        {
+          activity: { resourceCode: 'copper_rocks', type: 'farmResource' },
+          characterName: 'Stan',
+          consumes: [],
+          goalId: 'replenishBankItem:copper_ore:2',
+          produces: [{ itemCode: 'copper_ore' }],
+        },
+      ],
+      state: {
+        goals: [
+          {
+            id: 'replenishBankItem:copper_ore:2',
+            itemCode: 'copper_ore',
+            minimumBankQuantity: 2,
+            origin: 'prerequisite',
+            parentGoalId: professionGoal.id,
+            reason:
+              'Stan needs 2x copper_ore from copper_rocks to craft training_blade for weaponcrafting XP',
+            resourceCode: 'copper_rocks',
+            rule: 'professionProgression',
+            type: 'replenishBankItem',
+          },
+          professionGoal,
+          equipmentGoal,
+        ],
+        reservations: [],
+      },
+    });
+  });
+
   it('rejects a profession prerequisite whose blocked parent is absent', () => {
     const planGoalActivities = vi.fn();
     const orchestrate = createOrchestrator(buildWorld(), undefined, {

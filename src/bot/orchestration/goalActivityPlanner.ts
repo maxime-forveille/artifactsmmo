@@ -94,7 +94,7 @@ const isCompletedGoalStillSatisfied = (
   activities: readonly ActivityAssignment[],
   goal: OrchestratorState['goals'][number],
 ): boolean => {
-  if (goal.type !== 'replenishBankItem') {
+  if (goal.type !== 'replenishBankItem' || goal.origin === 'prerequisite') {
     return true;
   }
 
@@ -265,7 +265,7 @@ export const createGoalActivityPlanner = (
                 );
               })()
             : goal.type === 'reachProfessionLevel'
-              ? planProfessionProgression(snapshot, planningState)
+              ? planProfessionProgression(snapshot, planningState, knowledge)
               : goal.type === 'replenishBankItem'
                 ? (() => {
                     const resource = resolveResource(knowledge, goal);

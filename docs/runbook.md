@@ -67,10 +67,14 @@ a future step. Safety, Reservation, prerequisite, and resource-exclusivity
 invariants remain non-configurable.
 
 A blocked equipment craft with an insufficient profession level inserts and
-persists a `reachProfessionLevel` prerequisite before its parent Goal. The Goal
-is completed when a fresh Crew Snapshot observes the required level. Profession
-XP Activity selection is not implemented yet, so this Goal may remain idle until
-the next migration slice or an external task raises the skill.
+persists a `reachProfessionLevel` prerequisite before its parent Goal. Until a
+fresh Crew Snapshot observes the required level, the planner selects a known
+eligible recipe whose direct materials are already held or available from
+unreserved bank stock. It performs at most one withdrawal or one craft per
+observation. If no recipe qualifies, one missing raw material may become a
+persisted `replenishBankItem` child when it has exactly one gathering source and
+an eligible crew gatherer. Craftable materials, monster-only sources, ambiguous
+sources, and resources above every crew member's gathering level remain idle.
 
 ### Durable configured Goals
 
